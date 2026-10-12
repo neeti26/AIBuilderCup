@@ -80,7 +80,7 @@ async def root():
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "status": "operational",
-        "ai_engine": "Gemini 1.5 Pro",
+        "ai_engine": "Gemini 2.0 Flash",
         "description": "Intelligent Shift Handover Platform for Manufacturing & Aerospace",
     }
 
@@ -98,6 +98,11 @@ async def health_check():
 
 @app.on_event("startup")
 async def startup_event():
+    # Validate critical config at startup so failures are obvious
+    if not settings.GEMINI_API_KEY:
+        logger.warning("GEMINI_API_KEY_NOT_SET — AI features will fail on first call")
+    if settings.GOOGLE_CLOUD_PROJECT in ("shiftsync-local", "your-gcp-project-id", ""):
+        logger.warning("running_in_memory_mode — data resets on restart (local dev only)")
     logger.info("shiftsync_started", version=settings.APP_VERSION, project=settings.GOOGLE_CLOUD_PROJECT)
 
 

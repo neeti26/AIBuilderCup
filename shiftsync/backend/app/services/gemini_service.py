@@ -1,12 +1,14 @@
 """
 Gemini AI Service — the intelligence core of ShiftSync.
 Uses the new google-genai SDK (v2+).
-Handles all AI operations: log analysis, handover generation, chat, anomaly detection.
+All blocking SDK calls run in a thread pool (asyncio.to_thread) to avoid
+stalling the uvicorn event loop.
 """
 from google import genai
 from google.genai import types as genai_types
 from typing import Optional, List
 import json
+import asyncio
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -14,17 +16,42 @@ from app.config import settings
 
 logger = structlog.get_logger()
 
-# Single client instance
+# Single client instance (thread-safe for read-only API calls)
 _client: Optional[genai.Client] = None
 
 def get_client() -> genai.Client:
     global _client
     if _client is None:
-        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        api_key = settings.GEMINI_API_KEY
+        project = settings.GOOGLE_CLOUD_PROJECT
+
+        # Vertex AI path: key starts with "AQ." or project is a real GCP project
+        # AI Studio path: key starts with "AIzaSy"
+        if api_key and api_key.startswith("AIzaSy"):
+            # Standard AI Studio key
+            _client = genai.Client(api_key=api_key)
+            logger.info("gemini_client_init", mode="ai_studio")
+        elif project and project not in ("shiftsync-local", "your-gcp-project-id", ""):
+            # Vertex AI — use application default credentials
+            _client = genai.Client(
+                vertexai=True,
+                project=project,
+                location="us-central1",
+            )
+            logger.info("gemini_client_init", mode="vertex_ai", project=project)
+        elif api_key:
+            # Fallback: try using the key as-is (may be a different format)
+            _client = genai.Client(api_key=api_key)
+            logger.info("gemini_client_init", mode="api_key_fallback")
+        else:
+            raise ValueError(
+                "Gemini not configured. Set GEMINI_API_KEY (from AI Studio) "
+                "or GOOGLE_CLOUD_PROJECT (for Vertex AI with ADC)."
+            )
     return _client
 
-MODEL_PRO   = "gemini-2.0-flash"        # Best available model for deep reasoning
-MODEL_FLASH = "gemini-2.0-flash-lite"   # Fast + cheap for real-time classification
+MODEL_PRO   = "gemini-2.0-flash"        # Deep reasoning — handover, chat, maintenance
+MODEL_FLASH = "gemini-2.0-flash-lite"   # Fast & cheap — log classification, anomaly detection
 
 SYSTEM_CONTEXT = """You are ShiftSync AI, an expert manufacturing operations intelligence system 
 specialized in aerospace and industrial manufacturing. You have deep expertise in:
@@ -41,8 +68,8 @@ Your responses are concise, actionable, and prioritized for manufacturing superv
 Always flag safety issues with highest priority. Be specific, not generic.
 """
 
-def _generate(model: str, prompt: str) -> str:
-    """Call Gemini and return the text response."""
+def _generate_sync(model: str, prompt: str) -> str:
+    """Synchronous Gemini call — always run via asyncio.to_thread."""
     client = get_client()
     response = client.models.generate_content(
         model=model,
@@ -55,6 +82,11 @@ def _generate(model: str, prompt: str) -> str:
         ),
     )
     return response.text
+
+
+async def _generate(model: str, prompt: str) -> str:
+    """Non-blocking wrapper — offloads the blocking SDK call to a thread."""
+    return await asyncio.to_thread(_generate_sync, model, prompt)
 
 
 def _parse_json(text: str) -> dict | list:
@@ -99,7 +131,7 @@ Severity guide:
 - info: Routine update, no action needed"""
 
     try:
-        text = _generate(MODEL_FLASH, prompt)
+        text = await _generate(MODEL_FLASH, prompt)
         return _parse_json(text)
     except Exception as e:
         logger.error("log_analysis_failed", error=str(e), raw_text=raw_text[:100])
@@ -221,7 +253,7 @@ Production Actual: {shift_data.get('production_actual', 'N/A')} units
 }}"""
 
     try:
-        text = _generate(MODEL_PRO, prompt)
+        text = await _generate(MODEL_PRO, prompt)
         return _parse_json(text)
     except Exception as e:
         logger.error("handover_generation_failed", error=str(e))
@@ -278,7 +310,7 @@ Respond with JSON:
 }}"""
 
     try:
-        text = _generate(MODEL_PRO, prompt)
+        text = await _generate(MODEL_PRO, prompt)
         return _parse_json(text)
     except Exception as e:
         logger.error("chat_failed", error=str(e))
@@ -315,7 +347,7 @@ Return a JSON array []. If no anomalies, return [].
 Only flag genuine anomalies, not normal operating variations."""
 
     try:
-        text = _generate(MODEL_FLASH, prompt)
+        text = await _generate(MODEL_FLASH, prompt)
         result = _parse_json(text)
         return result if isinstance(result, list) else []
     except Exception as e:
@@ -358,8 +390,19 @@ Maintenance History (last 10): {json.dumps(maintenance_history[-10:], default=st
 }}"""
 
     try:
-        text = _generate(MODEL_PRO, prompt)
+        text = await _generate(MODEL_PRO, prompt)
         return _parse_json(text)
     except Exception as e:
         logger.error("maintenance_rec_failed", error=str(e))
         raise ValueError(f"Maintenance recommendation failed: {str(e)}")
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+async def analyze_trend(prompt: str) -> dict:
+    """Run a free-form trend analysis prompt and return parsed JSON dict."""
+    try:
+        text = await _generate(MODEL_PRO, prompt)
+        return _parse_json(text)
+    except Exception as e:
+        logger.error("trend_analysis_failed", error=str(e))
+        raise ValueError(f"Trend analysis failed: {str(e)}")
