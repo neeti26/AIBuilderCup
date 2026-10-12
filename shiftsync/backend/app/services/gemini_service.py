@@ -1,59 +1,25 @@
 """
 Gemini AI Service — the intelligence core of ShiftSync.
-Uses the new google-genai SDK (v2+).
-All blocking SDK calls run in a thread pool (asyncio.to_thread) to avoid
-stalling the uvicorn event loop.
+Uses the Gemini REST API directly via httpx (avoids grpc/asyncio thread issues on Python 3.14).
+All calls are fully async — no thread pool needed.
 """
-from google import genai
-from google.genai import types as genai_types
 from typing import Optional, List
 import json
 import asyncio
+import httpx
 import structlog
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import settings
 
 logger = structlog.get_logger()
 
-# Single client instance (thread-safe for read-only API calls)
-_client: Optional[genai.Client] = None
+# ── Models ────────────────────────────────────────────────────────────────────
+MODEL_PRO   = "gemini-2.5-flash"       # Deep reasoning — handover, chat, maintenance
+MODEL_FLASH = "gemini-2.5-flash-lite"  # Fast — log classification, anomaly detection
 
-def get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        api_key = settings.GEMINI_API_KEY
-        project = settings.GOOGLE_CLOUD_PROJECT
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-        # Vertex AI path: key starts with "AQ." or project is a real GCP project
-        # AI Studio path: key starts with "AIzaSy"
-        if api_key and api_key.startswith("AIzaSy"):
-            # Standard AI Studio key
-            _client = genai.Client(api_key=api_key)
-            logger.info("gemini_client_init", mode="ai_studio")
-        elif project and project not in ("shiftsync-local", "your-gcp-project-id", ""):
-            # Vertex AI — use application default credentials
-            _client = genai.Client(
-                vertexai=True,
-                project=project,
-                location="us-central1",
-            )
-            logger.info("gemini_client_init", mode="vertex_ai", project=project)
-        elif api_key:
-            # Fallback: try using the key as-is (may be a different format)
-            _client = genai.Client(api_key=api_key)
-            logger.info("gemini_client_init", mode="api_key_fallback")
-        else:
-            raise ValueError(
-                "Gemini not configured. Set GEMINI_API_KEY (from AI Studio) "
-                "or GOOGLE_CLOUD_PROJECT (for Vertex AI with ADC)."
-            )
-    return _client
-
-MODEL_PRO   = "gemini-2.0-flash"        # Deep reasoning — handover, chat, maintenance
-MODEL_FLASH = "gemini-2.0-flash-lite"   # Fast & cheap — log classification, anomaly detection
-
-SYSTEM_CONTEXT = """You are ShiftSync AI, an expert manufacturing operations intelligence system 
+SYSTEM_CONTEXT = """You are ShiftSync AI, an expert manufacturing operations intelligence system
 specialized in aerospace and industrial manufacturing. You have deep expertise in:
 - Lean manufacturing and Six Sigma
 - OEE (Overall Equipment Effectiveness) analysis
@@ -65,76 +31,110 @@ specialized in aerospace and industrial manufacturing. You have deep expertise i
 
 You analyze operator logs, machine data, quality reports, and maintenance records.
 Your responses are concise, actionable, and prioritized for manufacturing supervisors.
-Always flag safety issues with highest priority. Be specific, not generic.
-"""
+Always flag safety issues with highest priority. Be specific, not generic."""
 
-def _generate_sync(model: str, prompt: str) -> str:
-    """Synchronous Gemini call — always run via asyncio.to_thread."""
-    client = get_client()
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=genai_types.GenerateContentConfig(
-            temperature=0.2,
-            top_p=0.8,
-            max_output_tokens=4096,
-            system_instruction=SYSTEM_CONTEXT,
-        ),
-    )
-    return response.text
+
+def _get_api_key() -> str:
+    """Read the Gemini API key fresh from env/settings every time — never cached."""
+    import os
+    # Try env var directly first (most reliable, bypasses pydantic cache)
+    key = os.environ.get("GEMINI_API_KEY", "") or settings.GEMINI_API_KEY or ""
+    if not key or key in ("PASTE_YOUR_AISTUDIO_KEY_HERE", "placeholder", ""):
+        raise ValueError("GEMINI_API_KEY is not set. Add it to your .env file.")
+    return key
 
 
 async def _generate(model: str, prompt: str) -> str:
-    """Non-blocking wrapper — offloads the blocking SDK call to a thread."""
-    return await asyncio.to_thread(_generate_sync, model, prompt)
+    """
+    Call Gemini REST API asynchronously via httpx.
+    Handles 429 rate limits with exponential backoff.
+    """
+    api_key = _get_api_key()
+    url = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
+
+    payload = {
+        "systemInstruction": {"parts": [{"text": SYSTEM_CONTEXT}]},
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "topP": 0.8,
+            "maxOutputTokens": 8192,
+        },
+    }
+
+    for attempt in range(4):
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(url, json=payload)
+
+        if response.status_code == 429:
+            wait = 15 * (2 ** attempt)  # 15s, 30s, 60s, 120s
+            logger.warning("gemini_rate_limit", attempt=attempt+1, wait_secs=wait, model=model)
+            await asyncio.sleep(wait)
+            continue
+
+        response.raise_for_status()
+        data = response.json()
+        candidates = data.get("candidates", [])
+        if not candidates:
+            raise ValueError(f"No candidates in Gemini response: {data}")
+        parts = candidates[0].get("content", {}).get("parts", [])
+        if not parts:
+            # Thinking model with no output parts — check finishReason
+            finish = candidates[0].get("finishReason", "unknown")
+            raise ValueError(f"No parts in response (finishReason={finish}). Try increasing maxOutputTokens.")
+        return parts[0].get("text", "")
+
+    raise ValueError("Gemini API rate limit exceeded after 4 attempts — please retry in a few seconds")
 
 
 def _parse_json(text: str) -> dict | list:
-    """Strip markdown code fences and parse JSON."""
+    """Strip markdown fences and parse JSON."""
     text = text.strip()
     if text.startswith("```"):
         parts = text.split("```")
-        # parts[1] is the content between first pair of fences
         text = parts[1]
         if text.startswith("json"):
             text = text[4:]
     return json.loads(text.strip())
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+# ── AI Functions ──────────────────────────────────────────────────────────────
+
 async def analyze_log_entry(raw_text: str, machine_id: Optional[str] = None) -> dict:
     """
-    Analyze a raw operator log entry.
-    Returns: category, severity, ai_summary, action_items, tags
+    Analyze a raw operator log entry using Gemini Flash-Lite.
+    Returns category, severity, ai_summary, action_items, tags.
     """
     prompt = f"""Analyze this manufacturing operator log entry and respond ONLY with valid JSON.
 
 Log Entry: "{raw_text}"
 {f'Machine/Asset ID: {machine_id}' if machine_id else ''}
 
-Respond with this exact JSON structure:
+Respond with EXACTLY this JSON structure (no extra text):
 {{
   "category": "<one of: machine|quality|safety|material|maintenance|production|other>",
   "severity": "<one of: critical|high|medium|low|info>",
-  "ai_summary": "<concise 1-2 sentence summary of the issue>",
+  "ai_summary": "<concise 1-2 sentence summary>",
   "action_items": ["<specific actionable task 1>", "<specific actionable task 2>"],
-  "tags": ["<relevant tag 1>", "<relevant tag 2>", "<relevant tag 3>"],
+  "tags": ["<tag1>", "<tag2>", "<tag3>"],
   "requires_immediate_attention": <true|false>,
-  "root_cause_hint": "<brief hypothesis about what caused this, if apparent>"
+  "root_cause_hint": "<brief hypothesis or null>"
 }}
 
 Severity guide:
 - critical: Safety risk, production stopped, major quality escape
 - high: Significant production impact, machine fault affecting output
-- medium: Minor production impact, quality concern under control
-- low: Informational, minor observation
-- info: Routine update, no action needed"""
+- medium: Minor production impact, quality concern
+- low: Informational
+- info: Routine update"""
 
     try:
         text = await _generate(MODEL_FLASH, prompt)
-        return _parse_json(text)
+        result = _parse_json(text)
+        logger.info("log_analyzed", severity=result.get("severity"), category=result.get("category"))
+        return result
     except Exception as e:
-        logger.error("log_analysis_failed", error=str(e), raw_text=raw_text[:100])
+        logger.error("log_analysis_failed", error=str(e)[:200], raw_text=raw_text[:80])
         return {
             "category": "other",
             "severity": "medium",
@@ -146,166 +146,111 @@ Severity guide:
         }
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def generate_handover_report(
     shift_data: dict,
     log_entries: List[dict],
     machine_statuses: List[dict],
     previous_shift_actions: Optional[List[dict]] = None,
 ) -> dict:
-    """
-    Generate a comprehensive AI-powered shift handover report using Gemini Pro.
-    """
+    """Generate a comprehensive AI shift handover report using Gemini 2.5 Flash."""
     logs_text = "\n".join([
-        f"[{log.get('created_at', '')}] [{log.get('severity', '').upper()}] "
-        f"[{log.get('category', '').upper()}] {log.get('raw_text', '')} "
-        f"(Machine: {log.get('machine_id', 'N/A')})"
+        f"[{log.get('created_at','')}] [{log.get('severity','').upper()}] "
+        f"[{log.get('category','').upper()}] {log.get('raw_text','')} "
+        f"(Machine: {log.get('machine_id','N/A')})"
         for log in log_entries
     ])
-
     machines_text = "\n".join([
-        f"- {m.get('name', m.get('machine_id', ''))} ({m.get('machine_id', '')}): "
-        f"Status={m.get('status', '').upper()}, OEE={m.get('oee', 'N/A')}%, "
-        f"Alerts={m.get('active_alerts', 0)}"
+        f"- {m.get('name', m.get('machine_id',''))} ({m.get('machine_id','')}): "
+        f"Status={m.get('status','').upper()}, OEE={m.get('oee','N/A')}%, "
+        f"Alerts={m.get('active_alerts',0)}"
         for m in machine_statuses
     ])
-
-    prev_actions_text = ""
+    prev_text = ""
     if previous_shift_actions:
-        prev_actions_text = "UNRESOLVED ACTIONS FROM PREVIOUS SHIFT:\n" + "\n".join([
-            f"- [{a.get('priority', '').upper()}] {a.get('description', '')}"
+        prev_text = "UNRESOLVED ACTIONS FROM PREVIOUS SHIFT:\n" + "\n".join([
+            f"- [{a.get('priority','').upper()}] {a.get('description','')}"
             for a in previous_shift_actions
         ])
 
-    prompt = f"""Generate a comprehensive shift handover report for the incoming shift supervisor.
-Respond ONLY with valid JSON matching the exact structure below.
+    prompt = f"""Generate a comprehensive shift handover report. Respond ONLY with valid JSON.
 
-=== SHIFT INFORMATION ===
-Shift: {shift_data.get('shift_type', '').upper()} SHIFT
-Line/Area: {shift_data.get('line', 'N/A')}
-Date: {shift_data.get('date', 'N/A')}
-Outgoing Supervisor: {shift_data.get('supervisor_name', 'N/A')}
-Production Target: {shift_data.get('production_target', 'N/A')} units
-Production Actual: {shift_data.get('production_actual', 'N/A')} units
+SHIFT: {shift_data.get('shift_type','').upper()} | Line: {shift_data.get('line','N/A')} | Date: {shift_data.get('date','N/A')}
+Supervisor: {shift_data.get('supervisor_name','N/A')} | Target: {shift_data.get('production_target','N/A')} units | Actual: {shift_data.get('production_actual','N/A')} units
 
-=== MACHINE STATUS ===
-{machines_text if machines_text else 'No machine data available'}
+MACHINES:
+{machines_text or 'No machine data'}
 
-=== OPERATOR LOGS ({len(log_entries)} entries) ===
-{logs_text if logs_text else 'No log entries recorded'}
+LOGS ({len(log_entries)} entries):
+{logs_text or 'No logs recorded'}
 
-{prev_actions_text}
+{prev_text}
 
-=== REQUIRED JSON OUTPUT ===
+Respond with this exact JSON:
 {{
-  "executive_summary": "<3-4 sentence high-level summary of the shift>",
-  "production_summary": "<Detailed production performance narrative>",
-  "critical_issues": [
-    {{
-      "issue": "<issue description>",
-      "machine_id": "<machine id or null>",
-      "impact": "<production/quality/safety impact>",
-      "status": "<resolved|ongoing|escalated>",
-      "action_required": "<specific action for incoming shift>"
-    }}
-  ],
-  "machine_health_overview": "<Assessment of overall machine health>",
-  "quality_incidents": [
-    {{
-      "description": "<quality issue description>",
-      "severity": "<critical|high|medium|low>",
-      "quantity_affected": "<number or unknown>",
-      "disposition": "<scrap|rework|hold|released|unknown>",
-      "follow_up": "<required follow-up action>"
-    }}
-  ],
-  "maintenance_completed": ["<completed task>"],
-  "maintenance_pending": ["<pending task with urgency>"],
-  "material_status": "<Status of raw materials, WIP, any shortages>",
-  "safety_incidents": [
-    {{
-      "description": "<incident description>",
-      "severity": "<critical|high|medium|low>",
-      "persons_involved": "<number or none>",
-      "action_taken": "<immediate action taken>",
-      "reporting_required": <true|false>
-    }}
-  ],
+  "executive_summary": "<3-4 sentence high-level summary for the plant manager>",
+  "production_summary": "<detailed production performance narrative>",
+  "critical_issues": [{{"issue":"","machine_id":null,"impact":"","status":"ongoing","action_required":""}}],
+  "machine_health_overview": "<overall machine health assessment>",
+  "quality_incidents": [{{"description":"","severity":"medium","quantity_affected":"unknown","disposition":"hold","follow_up":""}}],
+  "maintenance_completed": ["<task completed>"],
+  "maintenance_pending": ["<task pending>"],
+  "material_status": "<materials status>",
+  "safety_incidents": [{{"description":"","severity":"high","persons_involved":"none","action_taken":"","reporting_required":false}}],
   "action_items": [
-    {{
-      "id": "ACT-001",
-      "description": "<specific, actionable task>",
-      "priority": "<critical|high|medium|low>",
-      "category": "<machine|quality|safety|material|maintenance|production|other>",
-      "machine_id": "<machine id or null>",
-      "estimated_duration": "<e.g. 30 mins>",
-      "assigned_to": null
-    }}
+    {{"id":"ACT-001","description":"<task>","priority":"high","category":"machine","machine_id":null,"estimated_duration":"1 hour","assigned_to":null}}
   ],
-  "next_shift_recommendations": "<3-5 specific recommendations for the incoming shift>",
-  "shift_performance_score": <0-100 float>,
-  "performance_breakdown": {{
-    "safety_score": <0-100>,
-    "quality_score": <0-100>,
-    "production_score": <0-100>,
-    "maintenance_score": <0-100>
-  }}
+  "next_shift_recommendations": "<3-5 specific recommendations>",
+  "shift_performance_score": 75.0,
+  "performance_breakdown": {{"safety_score":80,"quality_score":75,"production_score":70,"maintenance_score":75}}
 }}"""
 
-    try:
-        text = await _generate(MODEL_PRO, prompt)
-        return _parse_json(text)
-    except Exception as e:
-        logger.error("handover_generation_failed", error=str(e))
-        raise ValueError(f"AI handover generation failed: {str(e)}")
+    text = await _generate(MODEL_PRO, prompt)
+    return _parse_json(text)
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def chat_with_shift_context(
     message: str,
     shift_context: Optional[dict] = None,
     conversation_history: Optional[List[dict]] = None,
 ) -> dict:
-    """Conversational AI interface for shift data queries."""
-    context_text = ""
+    """Natural language AI assistant for shift operations queries."""
+    ctx = ""
     if shift_context:
         logs = shift_context.get("logs", [])
         machines = shift_context.get("machines", [])
-        recent_logs = "\n".join([
-            f"[{l.get('severity', 'info').upper()}] {l.get('raw_text', '')}"
-            for l in logs[-20:]
+        recent = "\n".join([
+            f"[{l.get('severity','info').upper()}] {l.get('raw_text','')[:120]}"
+            for l in logs[-15:]
         ])
-        machine_summary = ", ".join([
-            f"{m.get('name', m.get('machine_id', ''))}:{m.get('status', '').upper()}"
+        mach_summary = ", ".join([
+            f"{m.get('name',m.get('machine_id',''))}:{m.get('status','').upper()}"
             for m in machines
         ])
-        context_text = f"""
-Current Shift Context:
-- Shift: {shift_context.get('shift_type', 'N/A')} | Line: {shift_context.get('line', 'N/A')}
-- Machines: {machine_summary}
-- Recent Logs:
-{recent_logs}
+        ctx = f"""
+Shift Context:
+- {shift_context.get('shift_type','N/A').upper()} shift on {shift_context.get('line','N/A')}
+- Machines: {mach_summary}
+- Recent logs:
+{recent}
 """
 
-    history_text = ""
+    history = ""
     if conversation_history:
         for msg in conversation_history[-6:]:
             role = "Operator" if msg.get("role") == "user" else "ShiftSync AI"
-            history_text += f"{role}: {msg.get('content', '')}\n"
+            history += f"{role}: {msg.get('content','')}\n"
 
-    prompt = f"""{context_text}
+    prompt = f"""{ctx}
+{f'Previous conversation:{chr(10)}{history}' if history else ''}
+Question: "{message}"
 
-{f'Previous conversation:{chr(10)}{history_text}' if history_text else ''}
-
-Operator/Supervisor asks: "{message}"
-
-Respond as ShiftSync AI. Be direct and actionable. Keep responses under 300 words.
-Reference specific machine IDs or log entries when relevant.
+Respond as ShiftSync AI. Be direct, specific, and actionable. Under 300 words.
+Reference machine IDs and log details when relevant.
 
 Respond with JSON:
 {{
   "response": "<your response>",
-  "sources": ["<reference to specific log/machine if applicable>"],
+  "sources": ["<log/machine reference if applicable>"],
   "suggested_actions": ["<follow-up action 1>", "<follow-up action 2>"]
 }}"""
 
@@ -313,49 +258,34 @@ Respond with JSON:
         text = await _generate(MODEL_PRO, prompt)
         return _parse_json(text)
     except Exception as e:
-        logger.error("chat_failed", error=str(e))
+        logger.error("chat_failed", error=str(e)[:200])
         return {
-            "response": "I encountered an error processing your request. Please try again.",
+            "response": "I encountered an error. Please try again.",
             "sources": [],
             "suggested_actions": [],
         }
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def detect_anomalies(machine_data: List[dict]) -> List[dict]:
-    """Analyze machine telemetry for anomalies."""
-    machines_text = json.dumps(machine_data, indent=2, default=str)
+    """Analyze machine telemetry for anomalies using Gemini Flash-Lite."""
+    prompt = f"""Analyze this machine telemetry for anomalies. Respond ONLY with a JSON array.
 
-    prompt = f"""Analyze this machine telemetry data for anomalies and predictive maintenance signals.
-Respond ONLY with a valid JSON array.
+{json.dumps(machine_data, indent=2, default=str)}
 
-Machine Data:
-{machines_text}
+For each anomaly found:
+{{"machine_id":"","alert_type":"temperature_spike","severity":"high","message":"","ai_diagnosis":"","recommended_action":"","confidence":0.85}}
 
-For each anomaly detected, provide:
-{{
-  "machine_id": "<machine id>",
-  "alert_type": "<e.g. temperature_spike|vibration_abnormal|oee_degradation>",
-  "severity": "<critical|high|medium|low>",
-  "message": "<clear description of the anomaly>",
-  "ai_diagnosis": "<technical explanation of likely cause>",
-  "recommended_action": "<specific action to take>",
-  "confidence": <0.0-1.0>
-}}
-
-Return a JSON array []. If no anomalies, return [].
-Only flag genuine anomalies, not normal operating variations."""
+Return [] if no anomalies. Only flag genuine issues, not normal variations."""
 
     try:
         text = await _generate(MODEL_FLASH, prompt)
         result = _parse_json(text)
         return result if isinstance(result, list) else []
     except Exception as e:
-        logger.error("anomaly_detection_failed", error=str(e))
+        logger.error("anomaly_detection_failed", error=str(e)[:200])
         return []
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def generate_maintenance_recommendation(
     machine_id: str,
     machine_name: str,
@@ -363,46 +293,31 @@ async def generate_maintenance_recommendation(
     current_status: dict,
     recent_alerts: List[dict],
 ) -> dict:
-    """Generate predictive maintenance recommendations for a specific machine."""
-    prompt = f"""Generate a predictive maintenance recommendation for this machine.
-Respond ONLY with valid JSON.
+    """Predictive maintenance recommendation for a specific machine."""
+    prompt = f"""Generate a predictive maintenance recommendation. Respond ONLY with valid JSON.
 
 Machine: {machine_name} (ID: {machine_id})
-Current Status: {json.dumps(current_status, default=str)}
+Status: {json.dumps(current_status, default=str)}
 Recent Alerts: {json.dumps(recent_alerts[-5:], default=str)}
-Maintenance History (last 10): {json.dumps(maintenance_history[-10:], default=str)}
+History: {json.dumps(maintenance_history[-10:], default=str)}
 
 {{
   "health_score": <0-100>,
   "predicted_failure_risk": "<low|medium|high|critical>",
-  "estimated_days_to_maintenance": <integer or null if urgent>,
+  "estimated_days_to_maintenance": <integer or null>,
   "recommended_maintenance_type": "<preventive|corrective|predictive|none>",
   "specific_actions": [
-    {{
-      "action": "<specific maintenance task>",
-      "urgency": "<immediate|within_24h|within_week|scheduled>",
-      "estimated_duration": "<time estimate>",
-      "parts_required": ["<part if known>"]
-    }}
+    {{"action":"","urgency":"within_week","estimated_duration":"2 hours","parts_required":[]}}
   ],
-  "reasoning": "<technical explanation based on data patterns>",
-  "cost_impact_if_ignored": "<estimated impact of deferring maintenance>"
+  "reasoning": "<technical explanation>",
+  "cost_impact_if_ignored": "<impact estimate>"
 }}"""
 
-    try:
-        text = await _generate(MODEL_PRO, prompt)
-        return _parse_json(text)
-    except Exception as e:
-        logger.error("maintenance_rec_failed", error=str(e))
-        raise ValueError(f"Maintenance recommendation failed: {str(e)}")
+    text = await _generate(MODEL_PRO, prompt)
+    return _parse_json(text)
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def analyze_trend(prompt: str) -> dict:
-    """Run a free-form trend analysis prompt and return parsed JSON dict."""
-    try:
-        text = await _generate(MODEL_PRO, prompt)
-        return _parse_json(text)
-    except Exception as e:
-        logger.error("trend_analysis_failed", error=str(e))
-        raise ValueError(f"Trend analysis failed: {str(e)}")
+    """Run a trend analysis prompt and return parsed JSON."""
+    text = await _generate(MODEL_PRO, prompt)
+    return _parse_json(text)

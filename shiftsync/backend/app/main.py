@@ -80,7 +80,7 @@ async def root():
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "status": "operational",
-        "ai_engine": "Gemini 2.0 Flash",
+        "ai_engine": "Gemini 2.5 Flash",
         "description": "Intelligent Shift Handover Platform for Manufacturing & Aerospace",
     }
 
