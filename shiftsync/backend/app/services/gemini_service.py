@@ -1,8 +1,10 @@
 """
 Gemini AI Service — the intelligence core of ShiftSync.
+Uses the new google-genai SDK (v2+).
 Handles all AI operations: log analysis, handover generation, chat, anomaly detection.
 """
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 from typing import Optional, List
 import json
 import structlog
@@ -12,32 +14,17 @@ from app.config import settings
 
 logger = structlog.get_logger()
 
-# Configure Gemini
-genai.configure(api_key=settings.GEMINI_API_KEY)
+# Single client instance
+_client: Optional[genai.Client] = None
 
-# Use Gemini 1.5 Pro for complex reasoning, Flash for quick classifications
-MODEL_PRO = "gemini-1.5-pro-latest"
-MODEL_FLASH = "gemini-1.5-flash-latest"
+def get_client() -> genai.Client:
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    return _client
 
-
-def _get_model(pro: bool = True):
-    model_name = MODEL_PRO if pro else MODEL_FLASH
-    return genai.GenerativeModel(
-        model_name=model_name,
-        generation_config={
-            "temperature": 0.2,  # Low temp for factual manufacturing context
-            "top_p": 0.8,
-            "top_k": 40,
-            "max_output_tokens": 4096,
-        },
-        safety_settings=[
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ]
-    )
-
+MODEL_PRO   = "gemini-2.0-flash"        # Best available model for deep reasoning
+MODEL_FLASH = "gemini-2.0-flash-lite"   # Fast + cheap for real-time classification
 
 SYSTEM_CONTEXT = """You are ShiftSync AI, an expert manufacturing operations intelligence system 
 specialized in aerospace and industrial manufacturing. You have deep expertise in:
@@ -54,18 +41,41 @@ Your responses are concise, actionable, and prioritized for manufacturing superv
 Always flag safety issues with highest priority. Be specific, not generic.
 """
 
+def _generate(model: str, prompt: str) -> str:
+    """Call Gemini and return the text response."""
+    client = get_client()
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=genai_types.GenerateContentConfig(
+            temperature=0.2,
+            top_p=0.8,
+            max_output_tokens=4096,
+            system_instruction=SYSTEM_CONTEXT,
+        ),
+    )
+    return response.text
+
+
+def _parse_json(text: str) -> dict | list:
+    """Strip markdown code fences and parse JSON."""
+    text = text.strip()
+    if text.startswith("```"):
+        parts = text.split("```")
+        # parts[1] is the content between first pair of fences
+        text = parts[1]
+        if text.startswith("json"):
+            text = text[4:]
+    return json.loads(text.strip())
+
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def analyze_log_entry(raw_text: str, machine_id: Optional[str] = None) -> dict:
     """
-    Analyze a raw operator log entry using Gemini Flash (fast classification).
+    Analyze a raw operator log entry.
     Returns: category, severity, ai_summary, action_items, tags
     """
-    model = _get_model(pro=False)
-
-    prompt = f"""{SYSTEM_CONTEXT}
-
-Analyze this manufacturing operator log entry and respond ONLY with valid JSON.
+    prompt = f"""Analyze this manufacturing operator log entry and respond ONLY with valid JSON.
 
 Log Entry: "{raw_text}"
 {f'Machine/Asset ID: {machine_id}' if machine_id else ''}
@@ -86,21 +96,13 @@ Severity guide:
 - high: Significant production impact, machine fault affecting output
 - medium: Minor production impact, quality concern under control
 - low: Informational, minor observation
-- info: Routine update, no action needed
-"""
+- info: Routine update, no action needed"""
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        # Strip markdown code blocks if present
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        return json.loads(text.strip())
-    except (json.JSONDecodeError, Exception) as e:
+        text = _generate(MODEL_FLASH, prompt)
+        return _parse_json(text)
+    except Exception as e:
         logger.error("log_analysis_failed", error=str(e), raw_text=raw_text[:100])
-        # Fallback
         return {
             "category": "other",
             "severity": "medium",
@@ -108,7 +110,7 @@ Severity guide:
             "action_items": ["Review log entry manually"],
             "tags": ["unclassified"],
             "requires_immediate_attention": False,
-            "root_cause_hint": None
+            "root_cause_hint": None,
         }
 
 
@@ -117,18 +119,15 @@ async def generate_handover_report(
     shift_data: dict,
     log_entries: List[dict],
     machine_statuses: List[dict],
-    previous_shift_actions: Optional[List[dict]] = None
+    previous_shift_actions: Optional[List[dict]] = None,
 ) -> dict:
     """
     Generate a comprehensive AI-powered shift handover report using Gemini Pro.
-    This is the flagship feature.
     """
-    model = _get_model(pro=True)
-
-    # Format context data
     logs_text = "\n".join([
-        f"[{log.get('created_at', '')}] [{log.get('severity', '').upper()}] [{log.get('category', '').upper()}] "
-        f"{log.get('raw_text', '')} (Machine: {log.get('machine_id', 'N/A')})"
+        f"[{log.get('created_at', '')}] [{log.get('severity', '').upper()}] "
+        f"[{log.get('category', '').upper()}] {log.get('raw_text', '')} "
+        f"(Machine: {log.get('machine_id', 'N/A')})"
         for log in log_entries
     ])
 
@@ -146,9 +145,7 @@ async def generate_handover_report(
             for a in previous_shift_actions
         ])
 
-    prompt = f"""{SYSTEM_CONTEXT}
-
-Generate a comprehensive shift handover report for the incoming shift supervisor.
+    prompt = f"""Generate a comprehensive shift handover report for the incoming shift supervisor.
 Respond ONLY with valid JSON matching the exact structure below.
 
 === SHIFT INFORMATION ===
@@ -169,8 +166,8 @@ Production Actual: {shift_data.get('production_actual', 'N/A')} units
 
 === REQUIRED JSON OUTPUT ===
 {{
-  "executive_summary": "<3-4 sentence high-level summary of the shift — what happened, key achievements, critical issues. Write as if briefing the plant manager.>",
-  "production_summary": "<Detailed production performance: targets vs actuals, efficiency, key bottlenecks and their impact>",
+  "executive_summary": "<3-4 sentence high-level summary of the shift>",
+  "production_summary": "<Detailed production performance narrative>",
   "critical_issues": [
     {{
       "issue": "<issue description>",
@@ -180,7 +177,7 @@ Production Actual: {shift_data.get('production_actual', 'N/A')} units
       "action_required": "<specific action for incoming shift>"
     }}
   ],
-  "machine_health_overview": "<Assessment of overall machine health, notable OEE trends, any machines at risk>",
+  "machine_health_overview": "<Assessment of overall machine health>",
   "quality_incidents": [
     {{
       "description": "<quality issue description>",
@@ -190,9 +187,9 @@ Production Actual: {shift_data.get('production_actual', 'N/A')} units
       "follow_up": "<required follow-up action>"
     }}
   ],
-  "maintenance_completed": ["<maintenance task completed during shift>"],
-  "maintenance_pending": ["<maintenance task still pending with urgency>"],
-  "material_status": "<Status of raw materials, WIP, any shortages or excesses affecting next shift>",
+  "maintenance_completed": ["<completed task>"],
+  "maintenance_pending": ["<pending task with urgency>"],
+  "material_status": "<Status of raw materials, WIP, any shortages>",
   "safety_incidents": [
     {{
       "description": "<incident description>",
@@ -209,33 +206,24 @@ Production Actual: {shift_data.get('production_actual', 'N/A')} units
       "priority": "<critical|high|medium|low>",
       "category": "<machine|quality|safety|material|maintenance|production|other>",
       "machine_id": "<machine id or null>",
-      "estimated_duration": "<e.g. 30 mins, 2 hours>",
+      "estimated_duration": "<e.g. 30 mins>",
       "assigned_to": null
     }}
   ],
-  "next_shift_recommendations": "<3-5 specific recommendations for the incoming shift: what to watch, what to prioritize, what to prepare>",
-  "shift_performance_score": <0-100 float score based on: safety (40%), quality (25%), production (25%), maintenance (10%)>,
+  "next_shift_recommendations": "<3-5 specific recommendations for the incoming shift>",
+  "shift_performance_score": <0-100 float>,
   "performance_breakdown": {{
     "safety_score": <0-100>,
     "quality_score": <0-100>,
     "production_score": <0-100>,
     "maintenance_score": <0-100>
   }}
-}}
-
-Be specific and actionable. Reference actual machine IDs, quantities, and times from the logs.
-If data is missing, note it rather than fabricating numbers.
-"""
+}}"""
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        return json.loads(text.strip())
-    except (json.JSONDecodeError, Exception) as e:
+        text = _generate(MODEL_PRO, prompt)
+        return _parse_json(text)
+    except Exception as e:
         logger.error("handover_generation_failed", error=str(e))
         raise ValueError(f"AI handover generation failed: {str(e)}")
 
@@ -244,21 +232,16 @@ If data is missing, note it rather than fabricating numbers.
 async def chat_with_shift_context(
     message: str,
     shift_context: Optional[dict] = None,
-    conversation_history: Optional[List[dict]] = None
+    conversation_history: Optional[List[dict]] = None,
 ) -> dict:
-    """
-    Conversational AI interface — operators and supervisors can ask questions
-    about their shift data in natural language.
-    """
-    model = _get_model(pro=True)
-
+    """Conversational AI interface for shift data queries."""
     context_text = ""
     if shift_context:
         logs = shift_context.get("logs", [])
         machines = shift_context.get("machines", [])
         recent_logs = "\n".join([
             f"[{l.get('severity', 'info').upper()}] {l.get('raw_text', '')}"
-            for l in logs[-20:]  # Last 20 logs for context
+            for l in logs[-20:]
         ])
         machine_summary = ", ".join([
             f"{m.get('name', m.get('machine_id', ''))}:{m.get('status', '').upper()}"
@@ -267,7 +250,6 @@ async def chat_with_shift_context(
         context_text = f"""
 Current Shift Context:
 - Shift: {shift_context.get('shift_type', 'N/A')} | Line: {shift_context.get('line', 'N/A')}
-- Date: {shift_context.get('date', 'N/A')}
 - Machines: {machine_summary}
 - Recent Logs:
 {recent_logs}
@@ -275,61 +257,45 @@ Current Shift Context:
 
     history_text = ""
     if conversation_history:
-        for msg in conversation_history[-6:]:  # Last 3 exchanges
+        for msg in conversation_history[-6:]:
             role = "Operator" if msg.get("role") == "user" else "ShiftSync AI"
             history_text += f"{role}: {msg.get('content', '')}\n"
 
-    prompt = f"""{SYSTEM_CONTEXT}
-
-{context_text}
+    prompt = f"""{context_text}
 
 {f'Previous conversation:{chr(10)}{history_text}' if history_text else ''}
 
 Operator/Supervisor asks: "{message}"
 
-Respond as ShiftSync AI. Be direct and actionable. If referencing specific issues from the shift data,
-cite the relevant log entries or machine IDs. If the question requires escalation or expert judgment,
-say so clearly. Keep responses under 300 words unless a detailed technical explanation is needed.
+Respond as ShiftSync AI. Be direct and actionable. Keep responses under 300 words.
+Reference specific machine IDs or log entries when relevant.
 
 Respond with JSON:
 {{
   "response": "<your response>",
   "sources": ["<reference to specific log/machine if applicable>"],
   "suggested_actions": ["<follow-up action 1>", "<follow-up action 2>"]
-}}
-"""
+}}"""
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        return json.loads(text.strip())
-    except (json.JSONDecodeError, Exception) as e:
+        text = _generate(MODEL_PRO, prompt)
+        return _parse_json(text)
+    except Exception as e:
         logger.error("chat_failed", error=str(e))
         return {
             "response": "I encountered an error processing your request. Please try again.",
             "sources": [],
-            "suggested_actions": []
+            "suggested_actions": [],
         }
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def detect_anomalies(machine_data: List[dict]) -> List[dict]:
-    """
-    Analyze machine telemetry data for anomalies using Gemini.
-    Returns list of detected anomalies with AI diagnosis.
-    """
-    model = _get_model(pro=False)
-
+    """Analyze machine telemetry for anomalies."""
     machines_text = json.dumps(machine_data, indent=2, default=str)
 
-    prompt = f"""{SYSTEM_CONTEXT}
-
-Analyze this machine telemetry data for anomalies, patterns, and predictive maintenance signals.
-Respond ONLY with valid JSON array.
+    prompt = f"""Analyze this machine telemetry data for anomalies and predictive maintenance signals.
+Respond ONLY with a valid JSON array.
 
 Machine Data:
 {machines_text}
@@ -337,28 +303,22 @@ Machine Data:
 For each anomaly detected, provide:
 {{
   "machine_id": "<machine id>",
-  "alert_type": "<e.g. temperature_spike|vibration_abnormal|oee_degradation|pressure_deviation|predictive_failure>",
+  "alert_type": "<e.g. temperature_spike|vibration_abnormal|oee_degradation>",
   "severity": "<critical|high|medium|low>",
   "message": "<clear description of the anomaly>",
-  "ai_diagnosis": "<technical explanation of likely cause based on the data pattern>",
-  "recommended_action": "<specific maintenance or operational action to take>",
+  "ai_diagnosis": "<technical explanation of likely cause>",
+  "recommended_action": "<specific action to take>",
   "confidence": <0.0-1.0>
 }}
 
-Return a JSON array. If no anomalies detected, return an empty array [].
-Only flag genuine anomalies, not normal operating variations.
-"""
+Return a JSON array []. If no anomalies, return [].
+Only flag genuine anomalies, not normal operating variations."""
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        result = json.loads(text.strip())
+        text = _generate(MODEL_FLASH, prompt)
+        result = _parse_json(text)
         return result if isinstance(result, list) else []
-    except (json.JSONDecodeError, Exception) as e:
+    except Exception as e:
         logger.error("anomaly_detection_failed", error=str(e))
         return []
 
@@ -369,23 +329,19 @@ async def generate_maintenance_recommendation(
     machine_name: str,
     maintenance_history: List[dict],
     current_status: dict,
-    recent_alerts: List[dict]
+    recent_alerts: List[dict],
 ) -> dict:
     """Generate predictive maintenance recommendations for a specific machine."""
-    model = _get_model(pro=True)
-
-    prompt = f"""{SYSTEM_CONTEXT}
-
-Generate a predictive maintenance recommendation for this machine.
+    prompt = f"""Generate a predictive maintenance recommendation for this machine.
 Respond ONLY with valid JSON.
 
 Machine: {machine_name} (ID: {machine_id})
 Current Status: {json.dumps(current_status, default=str)}
 Recent Alerts: {json.dumps(recent_alerts[-5:], default=str)}
-Maintenance History (last 10 events): {json.dumps(maintenance_history[-10:], default=str)}
+Maintenance History (last 10): {json.dumps(maintenance_history[-10:], default=str)}
 
 {{
-  "health_score": <0-100, overall machine health>,
+  "health_score": <0-100>,
   "predicted_failure_risk": "<low|medium|high|critical>",
   "estimated_days_to_maintenance": <integer or null if urgent>,
   "recommended_maintenance_type": "<preventive|corrective|predictive|none>",
@@ -399,17 +355,11 @@ Maintenance History (last 10 events): {json.dumps(maintenance_history[-10:], def
   ],
   "reasoning": "<technical explanation based on data patterns>",
   "cost_impact_if_ignored": "<estimated impact of deferring maintenance>"
-}}
-"""
+}}"""
 
     try:
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        return json.loads(text.strip())
+        text = _generate(MODEL_PRO, prompt)
+        return _parse_json(text)
     except Exception as e:
         logger.error("maintenance_rec_failed", error=str(e))
-        raise ValueError(f"Maintenance recommendation generation failed: {str(e)}")
+        raise ValueError(f"Maintenance recommendation failed: {str(e)}")

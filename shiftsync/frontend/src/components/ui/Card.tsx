@@ -7,12 +7,13 @@ interface CardProps {
   hover?: boolean;
   onClick?: () => void;
   'aria-label'?: string;
+  role?: string;
 }
 
-export default function Card({ children, className, hover = false, onClick, 'aria-label': ariaLabel }: CardProps) {
+export default function Card({ children, className, hover = false, onClick, 'aria-label': ariaLabel, role }: CardProps) {
   return (
     <div
-      role={onClick ? 'button' : undefined}
+      role={role || (onClick ? 'button' : undefined)}
       tabIndex={onClick ? 0 : undefined}
       aria-label={ariaLabel}
       onClick={onClick}

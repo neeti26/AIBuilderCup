@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ClipboardList, Plus, Send, AlertTriangle, CheckCircle,
-  Clock, Tag, Cpu, ChevronDown, Loader2, Sparkles
+  Clock, Tag, Cpu, Loader2, Sparkles
 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -12,7 +12,7 @@ import { useAuthStore } from '../store/authStore';
 import Card, { CardHeader, CardTitle } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
-import { LogEntry, Severity, LogCategory } from '../types';
+import { LogEntry, Severity } from '../types';
 import clsx from 'clsx';
 
 const LINES = ['Line-A', 'Line-B', 'Line-C', 'Line-D'];
@@ -22,12 +22,6 @@ const SHIFT_TYPES = [
   { value: 'night', label: 'Night Shift (22:00–06:00)' },
 ];
 const MACHINE_IDS = ['CNC-A01', 'CNC-A02', 'ROBOT-A01', 'INSP-A01', 'DRILL-B01', 'RIVET-B01', 'WELD-B01', 'SMT-C01', 'XRAY-C01', 'TEST-C01'];
-
-function SeverityIcon({ severity }: { severity: Severity }) {
-  if (severity === 'critical' || severity === 'high') return <AlertTriangle className="w-4 h-4 text-red-400" aria-hidden="true" />;
-  if (severity === 'medium') return <AlertTriangle className="w-4 h-4 text-yellow-400" aria-hidden="true" />;
-  return <CheckCircle className="w-4 h-4 text-green-400" aria-hidden="true" />;
-}
 
 export default function ShiftPage() {
   const { user } = useAuthStore();
@@ -44,24 +38,28 @@ export default function ShiftPage() {
     date: format(new Date(), 'yyyy-MM-dd'),
   });
 
-  // Load active shifts
-  const { isLoading: shiftsLoading } = useQuery({
+  // Load active shifts — v5 pattern: use useEffect instead of onSuccess
+  const { isLoading: shiftsLoading, data: shiftsData } = useQuery({
     queryKey: ['active-shifts'],
     queryFn: () => shiftsApi.getActive().then(r => r.data),
-    onSuccess: (data) => {
-      if (data.shifts.length > 0 && !activeShift) {
-        setActiveShift(data.shifts[0]);
-      }
-    },
   });
 
+  useEffect(() => {
+    if (shiftsData?.shifts?.length > 0 && !activeShift) {
+      setActiveShift(shiftsData.shifts[0]);
+    }
+  }, [shiftsData, activeShift, setActiveShift]);
+
   // Load logs for active shift
-  const { isLoading: logsLoading } = useQuery({
+  const { isLoading: logsLoading, data: logsData } = useQuery({
     queryKey: ['shift-logs', activeShift?.id],
     queryFn: () => logsApi.getForShift(activeShift!.id).then(r => r.data),
     enabled: !!activeShift?.id,
-    onSuccess: (data) => setLogs(data.logs),
   });
+
+  useEffect(() => {
+    if (logsData?.logs) setLogs(logsData.logs);
+  }, [logsData, setLogs]);
 
   // Create shift mutation
   const createShiftMutation = useMutation({

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
-const navItems = [
+const navItems: Array<{ to: string; icon: React.ComponentType<{ className?: string }>; label: string; exact?: boolean }> = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', exact: true },
   { to: '/shift', icon: ClipboardList, label: 'Active Shift' },
   { to: '/machines', icon: Cpu, label: 'Machines' },
@@ -54,9 +54,8 @@ export default function Sidebar() {
                 ? 'bg-blue-600/20 text-blue-400 border border-blue-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             )}
-            aria-current={({ isActive }) => isActive ? 'page' : undefined}
           >
-            {({ isActive }) => (
+            {({ isActive }: { isActive: boolean }) => (
               <>
                 <Icon className={clsx('w-4 h-4', isActive ? 'text-blue-400' : 'text-slate-500')} aria-hidden="true" />
                 {label}
