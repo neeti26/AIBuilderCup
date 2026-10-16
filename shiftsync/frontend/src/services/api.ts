@@ -62,6 +62,7 @@ export const logsApi = {
 export const handoverApi = {
   generate: (shiftId: string) =>
     api.post('/handover/generate', { shift_id: shiftId }),
+  getStatus: (shiftId: string) => api.get(`/handover/status/${shiftId}`),
   getForShift: (shiftId: string) => api.get(`/handover/shift/${shiftId}`),
   getLatest: (line: string) => api.get(`/handover/latest/${line}`),
 };

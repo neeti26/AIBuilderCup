@@ -49,4 +49,90 @@
   .animate-slide-up {
     animation: slideUp 0.3s ease-out;
   }
+
+  .animate-shimmer {
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .skeleton-shimmer {
+    background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+    background-size: 200% 100%;
+  }
+}
+
+/* Print styles — handover report ready for PDF/physical handover */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  body {
+    background-color: white !important;
+    color: #0f172a !important;
+    font-size: 11pt;
+  }
+
+  .bg-slate-900, .bg-slate-800, .bg-slate-700 {
+    background-color: white !important;
+  }
+
+  .text-slate-200, .text-slate-300, .text-slate-400, .text-slate-500, .text-white {
+    color: #0f172a !important;
+  }
+
+  .border-slate-700, .border-slate-600 {
+    border-color: #cbd5e1 !important;
+  }
+
+  .text-blue-400, .text-green-400, .text-red-400, .text-yellow-400, .text-orange-400 {
+    color: #0f172a !important;
+  }
+
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .no-print-button,
+  button,
+  .btn {
+    display: none !important;
+  }
+
+  .report-header-print {
+    page-break-after: always;
+  }
+
+  @page {
+    margin: 1.5cm;
+    @bottom-center {
+      content: "ShiftSync AI — AI Generated Handover Report";
+      font-size: 8pt;
+      color: #64748b;
+    }
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 8pt;
+      color: #64748b;
+    }
+  }
 }
