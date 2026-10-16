@@ -1,6 +1,10 @@
 # ShiftSync AI — Intelligent Shift Handover Platform
 
-> **AI Builder Cup 2025 — Manufacturing: Intelligent Operations & Industrial Efficiency**
+> **Google Cloud AI Builder Cup 2026 — JAPAC Region**  
+> **Theme:** Manufacturing: Intelligent Operations & Industrial Efficiency  
+> **Grand Finale:** Dec 4, 2026 — Singapore  
+> **Submission Deadline:** Oct 18, 2026  
+> **Repository:** https://github.com/neeti26/AIBuilderCup
 
 [![Cloud Run](https://img.shields.io/badge/Google%20Cloud-Cloud%20Run-blue?logo=google-cloud)](https://cloud.google.com/run)
 [![Gemini](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-purple?logo=google)](https://ai.google.dev/)
@@ -128,6 +132,30 @@ curl -X POST http://localhost:8080/api/v1/seed/demo-data \
 | `operator` | `demo123` | Operator |
 | `engineer` | `demo123` | Engineer |
 | `manager` | `demo123` | Manager |
+
+---
+
+## 📋 AI Builder Cup Submission
+
+| Requirement | Link / Status |
+|-------------|---------------|
+| **Theme** | Manufacturing: Intelligent Operations & Industrial Efficiency |
+| **Public GitHub Repo** | https://github.com/neeti26/AIBuilderCup |
+| **Deployed App (Cloud Run)** | `<PASTE AFTER ./deploy.sh>` |
+| **API Docs** | `<PASTE BACKEND URL>/docs` |
+| **Video Demo (≤3 min)** | `<PASTE YOUTUBE/VIMEO/DRIVE LINK>` |
+| **Pitch Deck (PDF)** | `<PASTE DECK LINK>` |
+
+**Deploy to Singapore (`asia-southeast1`):**
+```bash
+cd shiftsync
+chmod +x deploy.sh
+./deploy.sh <YOUR_GCP_PROJECT_ID> <YOUR_GEMINI_API_KEY>
+```
+
+Demo credentials: `supervisor` / `demo123`
+
+See [`SUBMISSION.md`](../SUBMISSION.md) for the full submission package, [`PITCH_DECK.md`](../PITCH_DECK.md) for deck content, and [`VIDEO_DEMO.md`](../VIDEO_DEMO.md) for the 3-minute video script.
 
 ---
 
