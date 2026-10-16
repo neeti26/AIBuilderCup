@@ -16,21 +16,32 @@
     font-family: 'Inter', system-ui, sans-serif;
     background-color: #0f172a;
     color: #e2e8f0;
-    font-size: 1rem; /* Larger base font */
+    font-size: 1.125rem !important; /* Much larger base font */
   }
 
-  /* Larger text throughout the app */
-  h1 { font-size: 1.5rem; font-weight: 700; }
-  h2 { font-size: 1.25rem; font-weight: 600; }
-  h3 { font-size: 1.125rem; font-weight: 600; }
-  p { font-size: 1rem; line-height: 1.6; }
-  .text-sm { font-size: 0.95rem; }
-  .text-base { font-size: 1rem; }
-  .text-lg { font-size: 1.125rem; }
-  .text-xl { font-size: 1.25rem; }
-  label { font-size: 0.95rem; font-weight: 500; }
-  button { font-size: 0.95rem; font-weight: 500; }
-  input, select, textarea { font-size: 1rem; }
+  /* Force larger text throughout the app — !important to override Tailwind */
+  h1 { font-size: 1.875rem !important; font-weight: 700; }
+  h2 { font-size: 1.5rem !important; font-weight: 600; }
+  h3 { font-size: 1.25rem !important; font-weight: 600; }
+  p { font-size: 1.125rem !important; line-height: 1.6; }
+  .text-xs { font-size: 0.95rem !important; }
+  .text-sm { font-size: 1rem !important; }
+  .text-base { font-size: 1.125rem !important; }
+  .text-lg { font-size: 1.25rem !important; }
+  .text-xl { font-size: 1.5rem !important; }
+  .text-2xl { font-size: 1.75rem !important; }
+  label { font-size: 1rem !important; font-weight: 500; }
+  button { font-size: 1rem !important; font-weight: 500; padding: 0.75rem 1.5rem !important; }
+  input, select, textarea { font-size: 1.125rem !important; padding: 0.75rem !important; }
+  
+  /* Larger sidebar text */
+  .sidebar-text, nav a, .nav-label { font-size: 1rem !important; }
+  
+  /* Larger badge text */
+  .badge-text, [class*="badge"] { font-size: 0.875rem !important; }
+  
+  /* Larger table/card text */
+  .card-text, [class*="card"] p, [class*="card"] span { font-size: 1rem !important; }
 
   /* Custom scrollbar */
   ::-webkit-scrollbar {
@@ -88,6 +99,16 @@
     background-size: 200% 100%;
   }
 }
+
+/* Layout spacing — more breathing room */
+main { padding: 1.5rem !important; }
+.card, [class*="Card"] { padding: 1.5rem !important; gap: 1rem !important; }
+.space-y-6 > * { margin-bottom: 1.5rem !important; }
+.gap-4 { gap: 1.5rem !important; }
+.gap-6 { gap: 2rem !important; }
+.p-6 { padding: 1.5rem !important; }
+.p-8 { padding: 2rem !important; }
+.py-6 { padding-top: 1.5rem !important; padding-bottom: 1.5rem !important; }
 
 /* Print styles — handover report ready for PDF/physical handover */
 @media print {
