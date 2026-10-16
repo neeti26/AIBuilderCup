@@ -95,6 +95,44 @@ uvicorn app.main:app --reload --port 8080
 
 API docs available at: http://localhost:8080/docs
 
+### Local Development (Recommended First Step)
+
+Run everything locally before deploying to the cloud:
+
+```bash
+# From the project root
+chmod +x run_local.sh
+./run_local.sh
+```
+
+Or on Windows:
+```powershell
+run_local.bat
+```
+
+This starts:
+- **Backend**: http://localhost:8080 (FastAPI + Gemini 2.5 Flash)
+- **Frontend**: http://localhost:5173 (React + Vite)
+- **API Docs**: http://localhost:8080/docs
+
+Demo credentials: `supervisor` / `demo123`
+
+---
+
+### Security Features
+
+| Feature | Implementation |
+|---------|---------------|
+| Input sanitization | XSS, NoSQL injection, null-byte stripping on all inputs |
+| Content Security Policy | Strict CSP header on all responses |
+| Rate limiting | Per-IP sliding window (login: 10/min, logs: 60/min, default: 120/min) |
+| Circuit breaker | Gemini API calls protected — fails fast when AI service is down |
+| JWT authentication | bcrypt password hashing (12 rounds), signed tokens, 8-hour expiry |
+| Security headers | HSTS, X-Frame-Options: DENY, X-Content-Type-Options, Referrer-Policy |
+| Output sanitization | All AI responses sanitized before returning to client |
+
+---
+
 ### Frontend Setup
 
 ```bash
@@ -104,7 +142,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-App available at: http://localhost:3000
+App available at: http://localhost:5173
 
 ### Initialize Demo Data
 

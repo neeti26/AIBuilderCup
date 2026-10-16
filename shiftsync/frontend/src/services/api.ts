@@ -1,32 +1,63 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
-// Create axios instance
+// Create axios instance with production-grade defaults
 const api: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 30000,
+  timeout: 30000, // 30 second timeout
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Track request count for global loading state
+let requestCount = 0;
+const onRequestStart = () => { requestCount++; };
+const onRequestEnd = () => { requestCount = Math.max(0, requestCount - 1); };
+
 // Attach JWT token to every request
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('shiftsync_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // Add request ID for tracing
+  config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  onRequestStart();
   return config;
+}, (error) => {
+  onRequestEnd();
+  return Promise.reject(error);
 });
 
-// Handle 401 globally
+// Handle responses with centralized error handling
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
+  (response) => {
+    onRequestEnd();
+    return response;
+  },
+  (error: AxiosError) => {
+    onRequestEnd();
+
+    // Centralized 401 handling — token expired or invalid
     if (error.response?.status === 401) {
       localStorage.removeItem('shiftsync_token');
       localStorage.removeItem('shiftsync_user');
-      window.location.href = '/login';
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+      return Promise.reject(error);
     }
+
+    // 429 Rate limited — user-facing message
+    if (error.response?.status === 429) {
+      return Promise.reject(error);
+    }
+
+    // 500+ Server errors — log and return structured error
+    if (error.response?.status && error.response.status >= 500) {
+      console.error('[ShiftSync API] Server error:', error.response.status, error.message);
+    }
+
     return Promise.reject(error);
   }
 );
@@ -53,9 +84,10 @@ export const shiftsApi = {
 // ─── Logs ─────────────────────────────────────────────────────────────────────
 export const logsApi = {
   submit: (data: object) => api.post('/logs/', data),
-  getForShift: (shiftId: string) => api.get(`/logs/shift/${shiftId}`),
+  getForShift: (shiftId: string, limit = 100, offset = 0) =>
+    api.get(`/logs/shift/${shiftId}`, { params: { limit, offset } }),
   getCritical: (shiftId: string) => api.get(`/logs/shift/${shiftId}/critical`),
-  getRecent: (limit = 20) => api.get('/logs/recent', { params: { limit } }),
+  getRecent: (limit = 50) => api.get('/logs/recent', { params: { limit } }),
 };
 
 // ─── Handover ─────────────────────────────────────────────────────────────────
@@ -95,6 +127,10 @@ export const aiApi = {
 // ─── Seed ─────────────────────────────────────────────────────────────────────
 export const seedApi = {
   seedDemo: () => api.post('/seed/demo-data'),
+  initUsers: () => api.post('/seed/init-users'),
 };
 
 export default api;
+
+// Export request count for global loading indicator
+export { requestCount };

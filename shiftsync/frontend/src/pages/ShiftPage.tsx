@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ClipboardList, Plus, Send, AlertTriangle, CheckCircle,
-  Clock, Tag, Cpu, Loader2, Sparkles
+  Clock, Tag, Cpu, Loader2, Sparkles, RefreshCw
 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -12,8 +12,10 @@ import { useAuthStore } from '../store/authStore';
 import Card, { CardHeader, CardTitle } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
+import { SkeletonLoader, SkeletonText } from '../components/ui/Skeleton';
 import { LogEntry, Severity } from '../types';
 import clsx from 'clsx';
+import { validateForm, required, minLength } from '../lib/validation';
 
 const LINES = ['Line-A', 'Line-B', 'Line-C', 'Line-D'];
 const SHIFT_TYPES = [
@@ -28,9 +30,11 @@ export default function ShiftPage() {
   const { activeShift, setActiveShift, logs, setLogs, addLog } = useShiftStore();
   const queryClient = useQueryClient();
 
+  // Local form state
   const [logText, setLogText] = useState('');
   const [selectedMachine, setSelectedMachine] = useState('');
   const [showStartShift, setShowStartShift] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [newShift, setNewShift] = useState({
     shift_type: 'day',
     line: 'Line-A',
@@ -38,10 +42,12 @@ export default function ShiftPage() {
     date: format(new Date(), 'yyyy-MM-dd'),
   });
 
-  // Load active shifts — v5 pattern: use useEffect instead of onSuccess
-  const { isLoading: shiftsLoading, data: shiftsData } = useQuery({
+  // Load active shifts with polling
+  const { isLoading: shiftsLoading, data: shiftsData, refetch } = useQuery({
     queryKey: ['active-shifts'],
     queryFn: () => shiftsApi.getActive().then(r => r.data),
+    refetchInterval: 10000, // Poll every 10s for new active shifts
+    refetchIntervalInBackground: true,
   });
 
   useEffect(() => {
@@ -50,11 +56,13 @@ export default function ShiftPage() {
     }
   }, [shiftsData, activeShift, setActiveShift]);
 
-  // Load logs for active shift
+  // Load logs for active shift with polling
   const { isLoading: logsLoading, data: logsData } = useQuery({
     queryKey: ['shift-logs', activeShift?.id],
     queryFn: () => logsApi.getForShift(activeShift!.id).then(r => r.data),
     enabled: !!activeShift?.id,
+    refetchInterval: 5000, // Poll every 5s for new logs
+    refetchIntervalInBackground: true,
   });
 
   useEffect(() => {
@@ -67,10 +75,14 @@ export default function ShiftPage() {
     onSuccess: (response) => {
       setActiveShift(response.data);
       setShowStartShift(false);
+      setNewShift({ shift_type: 'day', line: 'Line-A', production_target: 200, date: format(new Date(), 'yyyy-MM-dd') });
       toast.success('Shift started successfully');
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['active-shifts'] });
     },
-    onError: () => toast.error('Failed to start shift'),
+    onError: (error: any) => {
+      toast.error(error.response?.data?.error || 'Failed to start shift');
+    },
   });
 
   // Submit log mutation
@@ -80,17 +92,35 @@ export default function ShiftPage() {
       addLog(response.data.log as LogEntry);
       setLogText('');
       setSelectedMachine('');
+      setFormErrors({});
+      queryClient.invalidateQueries({ queryKey: ['shift-logs', activeShift?.id] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       if (response.data.alert_created) {
-        toast('Alert created for critical issue', { icon: '⚠️' });
+        toast('Critical alert raised — AI detected a safety issue', { icon: '⚠️' });
       } else {
-        toast.success('Log entry submitted & analyzed by AI');
+        toast.success('Log entry analyzed by AI');
       }
     },
-    onError: () => toast.error('Failed to submit log entry'),
+    onError: (error: any) => {
+      const detail = error.response?.data?.error || error.response?.data?.detail || 'Failed to submit log entry';
+      if (error.response?.status === 429) {
+        toast.error('Rate limited — please slow down');
+      } else {
+        toast.error(detail);
+      }
+    },
   });
 
   const handleStartShift = () => {
+    const errors = validateForm(newShift, {
+      shift_type: [required()],
+      line: [required()],
+      production_target: [(v: any) => (v == null || Number(v) <= 0 ? 'Target must be positive' : undefined)],
+      date: [required()],
+    });
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
     createShiftMutation.mutate({
       ...newShift,
       supervisor: user?.id || '',
@@ -99,9 +129,22 @@ export default function ShiftPage() {
     });
   };
 
+  const validateLogForm = () => {
+    const errors = validateForm(
+      { raw_text: logText, machine_id: selectedMachine },
+      {
+        raw_text: [required(), minLength(10, 'Please describe what happened (min 10 chars)')],
+      }
+    );
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmitLog = (e: React.FormEvent) => {
     e.preventDefault();
     if (!logText.trim() || !activeShift) return;
+    if (!validateLogForm()) return;
+
     submitLogMutation.mutate({
       shift_id: activeShift.id,
       raw_text: logText,
@@ -115,7 +158,9 @@ export default function ShiftPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white">Active Shift</h1>
-          <p className="text-slate-400 text-sm">Log events — AI classifies severity and extracts action items</p>
+          <p className="text-slate-400 text-sm">
+            Log events — AI classifies severity, extracts action items, and raises alerts
+          </p>
         </div>
         {!activeShift && (
           <Button
@@ -123,6 +168,18 @@ export default function ShiftPage() {
             icon={<Plus className="w-4 h-4" aria-hidden="true" />}
           >
             Start Shift
+          </Button>
+        )}
+        {activeShift && (
+          <Button
+            onClick={() => refetch()}
+            variant="ghost"
+            size="sm"
+            icon={<RefreshCw className="w-4 h-4" aria-hidden="true" />}
+            className="text-slate-400 hover:text-blue-400"
+            aria-label="Refresh shift data"
+          >
+            Refresh
           </Button>
         )}
       </div>
@@ -134,58 +191,68 @@ export default function ShiftPage() {
             <CardTitle icon={ClipboardList}>Start New Shift</CardTitle>
             <button onClick={() => setShowStartShift(false)} className="text-slate-400 hover:text-slate-200 text-xs" aria-label="Cancel">Cancel</button>
           </CardHeader>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-slate-400 mb-1 block" htmlFor="shift-type">Shift Type</label>
-              <select
-                id="shift-type"
-                value={newShift.shift_type}
-                onChange={e => setNewShift(p => ({ ...p, shift_type: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {SHIFT_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
+          <form onSubmit={(e) => { e.preventDefault(); handleStartShift(); }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block" htmlFor="shift-type">Shift Type</label>
+                <select
+                  id="shift-type"
+                  value={newShift.shift_type}
+                  onChange={e => setNewShift(p => ({ ...p, shift_type: e.target.value }))}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {SHIFT_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block" htmlFor="line">Production Line</label>
+                <select
+                  id="line"
+                  value={newShift.line}
+                  onChange={e => setNewShift(p => ({ ...p, line: e.target.value }))}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {LINES.map(l => <option key={l}>{l}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-slate-400 mb-1 block" htmlFor="line">Production Line</label>
-              <select
-                id="line"
-                value={newShift.line}
-                onChange={e => setNewShift(p => ({ ...p, line: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {LINES.map(l => <option key={l}>{l}</option>)}
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block" htmlFor="production-target">Production Target (units)</label>
+                <input
+                  id="production-target"
+                  type="number"
+                  value={newShift.production_target}
+                  onChange={e => setNewShift(p => ({ ...p, production_target: parseInt(e.target.value) || 0 }))}
+                  className={clsx(
+                    'w-full bg-slate-700 border rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2',
+                    formErrors.production_target ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
+                  )}
+                />
+                {formErrors.production_target && (
+                  <p className="text-red-400 text-xs mt-1">{formErrors.production_target}</p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block" htmlFor="shift-date">Date</label>
+                <input
+                  id="shift-date"
+                  type="date"
+                  value={newShift.date}
+                  onChange={e => setNewShift(p => ({ ...p, date: e.target.value }))}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
-            <div>
-              <label className="text-xs text-slate-400 mb-1 block" htmlFor="production-target">Production Target (units)</label>
-              <input
-                id="production-target"
-                type="number"
-                value={newShift.production_target}
-                onChange={e => setNewShift(p => ({ ...p, production_target: parseInt(e.target.value) }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+            <div className="mt-4 flex gap-3">
+              <Button type="submit" loading={createShiftMutation.isPending}>
+                Start Shift
+              </Button>
+              <Button variant="secondary" type="button" onClick={() => setShowStartShift(false)}>
+                Cancel
+              </Button>
             </div>
-            <div>
-              <label className="text-xs text-slate-400 mb-1 block" htmlFor="shift-date">Date</label>
-              <input
-                id="shift-date"
-                type="date"
-                value={newShift.date}
-                onChange={e => setNewShift(p => ({ ...p, date: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-          <div className="mt-4 flex gap-3">
-            <Button onClick={handleStartShift} loading={createShiftMutation.isPending}>
-              Start Shift
-            </Button>
-            <Button variant="secondary" onClick={() => setShowStartShift(false)}>
-              Cancel
-            </Button>
-          </div>
+          </form>
         </Card>
       )}
 
@@ -215,7 +282,7 @@ export default function ShiftPage() {
       {/* Log Entry Form */}
       {activeShift && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex items-center justify-between">
             <CardTitle icon={Sparkles}>New Log Entry</CardTitle>
             <span className="text-xs text-slate-500 flex items-center gap-1">
               <Sparkles className="w-3 h-3" aria-hidden="true" /> AI-powered analysis
@@ -245,11 +312,17 @@ export default function ShiftPage() {
                 value={logText}
                 onChange={e => setLogText(e.target.value)}
                 placeholder="e.g. CNC-A01 showing intermittent spindle fault E-047. Machine stopped twice during the 08:00–10:00 window. Maintenance notified. Parts reworked and released after inspection..."
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-3 text-slate-200 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className={clsx(
+                  'w-full bg-slate-700 border rounded-lg px-3 py-3 text-slate-200 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 resize-none',
+                  formErrors.raw_text ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
+                )}
                 rows={4}
                 minLength={10}
                 required
               />
+              {formErrors.raw_text && (
+                <p className="text-red-400 text-xs mt-1">{formErrors.raw_text}</p>
+              )}
               <p className="text-slate-600 text-xs mt-1">{logText.length}/5000 characters</p>
             </div>
             <div className="flex items-center justify-between">
@@ -260,7 +333,7 @@ export default function ShiftPage() {
                 type="submit"
                 loading={submitLogMutation.isPending}
                 icon={<Send className="w-3.5 h-3.5" aria-hidden="true" />}
-                disabled={!logText.trim()}
+                disabled={!logText.trim() || submitLogMutation.isPending}
               >
                 Submit & Analyze
               </Button>
@@ -272,13 +345,13 @@ export default function ShiftPage() {
       {/* Log Feed */}
       {activeShift && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex items-center justify-between">
             <CardTitle icon={ClipboardList}>
               Shift Log Feed ({logs.length} entries)
             </CardTitle>
             <div className="flex items-center gap-2">
               {logsLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" aria-hidden="true" />}
-              <span className="text-xs text-slate-500">Newest first</span>
+              <span className="text-xs text-slate-500">Live updates every 5s</span>
             </div>
           </CardHeader>
 

@@ -2,7 +2,7 @@
 Production middleware for ShiftSync AI.
 - Request ID tracing for distributed debugging
 - In-memory sliding-window rate limiter (per IP + endpoint)
-- Security headers
+- Security headers including Content Security Policy
 """
 import time
 import uuid
@@ -14,6 +14,8 @@ from fastapi import Request, Response, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
+
+from app.security import build_content_security_policy
 
 logger = structlog.get_logger()
 
@@ -127,4 +129,5 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = build_content_security_policy()
         return response
