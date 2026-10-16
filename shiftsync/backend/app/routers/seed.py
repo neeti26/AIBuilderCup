@@ -69,7 +69,7 @@ DEMO_MACHINES = [
 DEMO_USERS = [
     {
         "username": "supervisor",
-        "full_name": "Sarah Chen",
+        "full_name": "Neeti Malu",
         "role": "supervisor",
         "department": "Production",
         "password": "spidey@01",
