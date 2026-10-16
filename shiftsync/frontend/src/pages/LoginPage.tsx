@@ -57,7 +57,7 @@ export default function LoginPage() {
 
         <div className="space-y-4">
           {[
-            { icon: Sparkles, text: 'Gemini 1.5 Pro automatically classifies every log entry' },
+            { icon: Sparkles, text: 'Gemini 2.5 Flash automatically classifies every log entry' },
             { icon: Activity, text: 'Real-time anomaly detection across all machines' },
             { icon: Cpu, text: 'Predictive maintenance recommendations' },
             { icon: Shield, text: 'Critical safety alerts never get missed again' },

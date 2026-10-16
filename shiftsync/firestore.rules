@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All authenticated requests go through the Cloud Function (server-side auth)
+    // Direct client access is not used — lock everything down
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,43 @@
+# ─── ShiftSync AI — .gitignore ──────────────────────────────────────────────
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env
+!.env.example
+
+# Node
+node_modules/
+.npm
+.eslintcache
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Firebase local cache
+.firebase/
+
+# Build outputs
+dist/
+build/
+
+# Test outputs (keep the test scripts, not their output)
+test_output.txt
+
+# Environment
+*.env
+!*.env.example

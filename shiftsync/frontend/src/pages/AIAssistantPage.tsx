@@ -23,7 +23,7 @@ export default function AIAssistantPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      content: "Hello! I'm ShiftSync AI, powered by Gemini 1.5 Pro. I have full context of your current shift operations — machine statuses, operator logs, quality reports, and more. Ask me anything about your shift.",
+      content: "Hello! I'm ShiftSync AI, powered by Gemini 2.5 Flash. I have full context of your current shift operations — machine statuses, operator logs, quality reports, and more. Ask me anything about your shift.",
       timestamp: new Date(),
     }
   ]);
@@ -95,7 +95,7 @@ export default function AIAssistantPage() {
             AI Operations Assistant
           </h1>
           <p className="text-slate-400 text-sm">
-            Gemini 1.5 Pro · {activeShift ? `Context: ${activeShift.line} ${activeShift.shift_type} shift` : 'No active shift context'}
+            Gemini 2.5 Flash · {activeShift ? `Context: ${activeShift.line} ${activeShift.shift_type} shift` : 'No active shift context'}
           </p>
         </div>
         {activeShift && (

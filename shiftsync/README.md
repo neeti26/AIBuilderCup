@@ -3,7 +3,7 @@
 > **AI Builder Cup 2025 — Manufacturing: Intelligent Operations & Industrial Efficiency**
 
 [![Cloud Run](https://img.shields.io/badge/Google%20Cloud-Cloud%20Run-blue?logo=google-cloud)](https://cloud.google.com/run)
-[![Gemini](https://img.shields.io/badge/AI-Gemini%201.5%20Pro-purple?logo=google)](https://ai.google.dev/)
+[![Gemini](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-purple?logo=google)](https://ai.google.dev/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/Frontend-React%2018-61DAFB?logo=react)](https://react.dev/)
 
@@ -38,7 +38,7 @@ ShiftSync AI transforms unstructured operational data into structured, actionabl
 | Feature | Description |
 |---|---|
 | **AI Log Analysis** | Operators write free-text logs; Gemini Flash instantly classifies severity, category, and extracts action items |
-| **Shift Handover Report** | Gemini 1.5 Pro generates a comprehensive structured briefing covering production, machines, quality, safety, and maintenance |
+| **Shift Handover Report** | Gemini 2.5 Flash generates a comprehensive structured briefing covering production, machines, quality, safety, and maintenance |
 | **Predictive Maintenance** | Real-time telemetry anomaly detection with AI diagnosis and maintenance recommendations |
 | **AI Operations Assistant** | Natural language Q&A on shift data — ask "which machines are at risk?" and get specific answers |
 | **Real-time Alert System** | Auto-escalation of critical issues with AI diagnosis and recommended actions |
@@ -57,14 +57,14 @@ ShiftSync AI transforms unstructured operational data into structured, actionabl
                          ▼              ▼              ▼
                    ┌──────────┐  ┌──────────┐  ┌──────────┐
                    │ Firestore │  │ Gemini   │  │ Secret   │
-                   │(database) │  │ 1.5 Pro  │  │ Manager  │
+                   │(database) │  │ 2.5 Flash│  │ Manager  │
                    └──────────┘  └──────────┘  └──────────┘
 ```
 
 ### AI Models Used
 
-- **Gemini 1.5 Pro** — Handover report generation, trend analysis, chat assistant, maintenance recommendations
-- **Gemini 1.5 Flash** — Real-time log classification, anomaly detection (fast, cost-efficient)
+- **Gemini 2.5 Flash** — Handover report generation, trend analysis, chat assistant, maintenance recommendations
+- **Gemini 2.5 Flash-Lite** — Real-time log classification, anomaly detection (fast, cost-efficient)
 
 ---
 
@@ -220,7 +220,7 @@ ShiftSync directly addresses the $1.4B annual cost of shift handover failures in
 
 ## Built With
 
-- **[Gemini 1.5 Pro & Flash](https://ai.google.dev/)** — Core AI engine
+- **[Gemini 2.5 Flash & Flash-Lite](https://ai.google.dev/)** — Core AI engine
 - **[Google Cloud Firestore](https://cloud.google.com/firestore)** — Real-time database
 - **[Google Cloud Run](https://cloud.google.com/run)** — Serverless deployment
 - **[Google Cloud Secret Manager](https://cloud.google.com/secret-manager)** — API key management

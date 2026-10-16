@@ -38,7 +38,7 @@ app = FastAPI(
 
 Eliminates communication gaps in manufacturing shift transitions through AI-powered:
 - **Operator Log Analysis** — Auto-classify severity, extract action items, detect anomalies
-- **Shift Handover Reports** — Comprehensive AI-generated briefings using Gemini 1.5 Pro
+- **Shift Handover Reports** — Comprehensive AI-generated briefings using Gemini 2.5 Flash
 - **Predictive Maintenance** — Real-time anomaly detection and maintenance recommendations
 - **AI Assistant** — Natural language queries on shift data and machine health
 - **Real-time Alerts** — Automatic escalation of critical issues across teams
