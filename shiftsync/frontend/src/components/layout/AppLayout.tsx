@@ -40,16 +40,7 @@ export default function AppLayout() {
           )}
           aria-label="Main navigation"
         >
-          <div className="flex items-center justify-between p-5 border-b border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center" aria-hidden="true">
-                <span className="text-white font-bold text-sm">SS</span>
-              </div>
-              <div>
-                <h1 className="text-white font-bold text-sm leading-tight">ShiftSync AI</h1>
-                <p className="text-slate-500 text-xs">Intelligent Operations</p>
-              </div>
-            </div>
+          <div className="p-3 border-b border-slate-800">
             {sidebarOpen && (
               <button
                 onClick={() => setSidebarOpen(false)}

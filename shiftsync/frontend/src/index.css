@@ -16,7 +16,21 @@
     font-family: 'Inter', system-ui, sans-serif;
     background-color: #0f172a;
     color: #e2e8f0;
+    font-size: 1rem; /* Larger base font */
   }
+
+  /* Larger text throughout the app */
+  h1 { font-size: 1.5rem; font-weight: 700; }
+  h2 { font-size: 1.25rem; font-weight: 600; }
+  h3 { font-size: 1.125rem; font-weight: 600; }
+  p { font-size: 1rem; line-height: 1.6; }
+  .text-sm { font-size: 0.95rem; }
+  .text-base { font-size: 1rem; }
+  .text-lg { font-size: 1.125rem; }
+  .text-xl { font-size: 1.25rem; }
+  label { font-size: 0.95rem; font-weight: 500; }
+  button { font-size: 0.95rem; font-weight: 500; }
+  input, select, textarea { font-size: 1rem; }
 
   /* Custom scrollbar */
   ::-webkit-scrollbar {

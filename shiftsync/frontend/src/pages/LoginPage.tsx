@@ -133,8 +133,8 @@ export default function LoginPage() {
           <div className="mt-6 p-4 bg-slate-800/50 border border-slate-700 rounded-xl">
             <p className="text-slate-400 text-xs mb-2 font-medium">Demo Credentials:</p>
             <div className="space-y-1 text-xs text-slate-500">
-              <p><span className="text-slate-300">supervisor</span> / <span className="text-slate-300">demo123</span> — Supervisor</p>
-              <p><span className="text-slate-300">operator</span> / <span className="text-slate-300">demo123</span> — Operator</p>
+              <p><span className="text-slate-300">supervisor</span> / <span className="text-slate-300">spidey@01</span> — Supervisor</p>
+              <p><span className="text-slate-300">operator</span> / <span className="text-slate-300">webby001</span> — Operator</p>
             </div>
           </div>
         </div>

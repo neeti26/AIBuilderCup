@@ -37,6 +37,27 @@ async def lifespan(app: FastAPI):
     if not settings.GEMINI_API_KEY:
         logger.warning("GEMINI_API_KEY_NOT_SET — AI features will fail")
 
+    # Auto-seed demo data on first startup (if no users exist)
+    try:
+        from app.services import firestore_service, auth_service
+        from app.routers.seed import DEMO_USERS, DEMO_MACHINES
+
+        supervisor = await firestore_service.get_user_by_username("supervisor")
+        if not supervisor:
+            logger.info("auto_seeding_demo_data — initializing users and machines")
+            for machine in DEMO_MACHINES:
+                await firestore_service.upsert_machine(machine)
+            for user_data in DEMO_USERS:
+                # Use a copy to avoid mutating the global DEMO_USERS list
+                user_copy = {k: v for k, v in user_data.items()}
+                password = user_copy.pop("password", "demo123")
+                hashed = auth_service.hash_password(password)
+                user_copy["hashed_password"] = hashed
+                await firestore_service.create_user(user_copy)
+            logger.info("auto_seeding_complete")
+    except Exception as e:
+        logger.warning("auto_seed_failed", error=str(e)[:200])
+
     yield
 
     # Shutdown

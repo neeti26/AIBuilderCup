@@ -166,13 +166,12 @@ curl -X POST http://localhost:8080/api/v1/seed/demo-data \
 ### Demo Credentials
 | Username | Password | Role |
 |---|---|---|
-| `supervisor` | `demo123` | Supervisor |
-| `operator` | `demo123` | Operator |
-| `engineer` | `demo123` | Engineer |
-| `manager` | `demo123` | Manager |
+| `supervisor` | `spidey@01` | Supervisor |
+| `staff` | `webby001` | Operator |
+| `engineer` | `webby001` | Engineer |
+| `manager` | `webby001` | Manager |
 
----
-
+**Demo data is auto-seeded on first startup** — machines, users, and sample data are ready immediately after launching the backend.
 ## 📋 AI Builder Cup Submission
 
 | Requirement | Link / Status |

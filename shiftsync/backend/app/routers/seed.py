@@ -72,28 +72,28 @@ DEMO_USERS = [
         "full_name": "Sarah Chen",
         "role": "supervisor",
         "department": "Production",
-        "password": "demo123",
+        "password": "spidey@01",
     },
     {
-        "username": "operator",
+        "username": "staff",
         "full_name": "Mike Torres",
         "role": "operator",
         "department": "Line-A",
-        "password": "demo123",
+        "password": "webby001",
     },
     {
         "username": "engineer",
         "full_name": "Priya Nair",
         "role": "engineer",
         "department": "Process Engineering",
-        "password": "demo123",
+        "password": "webby001",
     },
     {
         "username": "manager",
         "full_name": "James Okafor",
         "role": "manager",
         "department": "Operations",
-        "password": "demo123",
+        "password": "webby001",
     },
 ]
 
@@ -119,9 +119,12 @@ async def seed_demo_data(
         if existing:
             results["users_skipped"] += 1
             continue
-        hashed = auth_service.hash_password(user_data.pop("password"))
-        user_data["hashed_password"] = hashed
-        await firestore_service.create_user(user_data)
+        # Use a copy to avoid mutating the global DEMO_USERS list
+        user_copy = {k: v for k, v in user_data.items()}
+        password = user_copy.pop("password", "demo123")
+        hashed = auth_service.hash_password(password)
+        user_copy["hashed_password"] = hashed
+        await firestore_service.create_user(user_copy)
         results["users_seeded"] += 1
 
     return {
@@ -129,8 +132,8 @@ async def seed_demo_data(
         "seeded": results,
         "demo_scenario": "Aerospace Wing, Fuselage & Avionics Assembly — 3 Production Lines",
         "demo_credentials": [
-            {"username": "supervisor", "password": "demo123", "role": "supervisor"},
-            {"username": "operator", "password": "demo123", "role": "operator"},
+            {"username": "supervisor", "password": "spidey@01", "role": "supervisor"},
+            {"username": "staff", "password": "webby001", "role": "operator"},
         ],
         "next_steps": [
             "1. Login with supervisor / demo123",
@@ -147,25 +150,41 @@ async def init_users_only():
     """
     Public endpoint (no auth required) to create initial demo users.
     Only works if NO users exist yet (first-time setup).
+    Auto-seeds demo machines so data is ready on first login.
     """
     # Check if any user already exists
     supervisor = await firestore_service.get_user_by_username("supervisor")
     if supervisor:
         return {"message": "Users already initialized", "status": "skip"}
 
+    # Seed machines first
+    for machine in DEMO_MACHINES:
+        await firestore_service.upsert_machine(machine)
+
     seeded = 0
     for user_data in DEMO_USERS:
-        hashed = auth_service.hash_password(user_data.pop("password"))
-        user_data["hashed_password"] = hashed
-        await firestore_service.create_user(user_data)
+        # Use a copy to avoid mutating the global DEMO_USERS list
+        user_copy = {k: v for k, v in user_data.items()}
+        password = user_copy.pop("password", "demo123")
+        hashed = auth_service.hash_password(password)
+        user_copy["hashed_password"] = hashed
+        await firestore_service.create_user(user_copy)
         seeded += 1
 
     return {
-        "message": f"Initialized {seeded} demo users",
+        "message": f"Initialized {seeded} demo users and seeded {len(DEMO_MACHINES)} machines",
         "credentials": [
-            {"username": "supervisor", "password": "demo123"},
-            {"username": "operator", "password": "demo123"},
-            {"username": "engineer", "password": "demo123"},
-            {"username": "manager", "password": "demo123"},
+            {"username": "supervisor", "password": "spidey@01", "role": "supervisor"},
+            {"username": "staff", "password": "webby001", "role": "operator"},
+            {"username": "engineer", "password": "webby001", "role": "engineer"},
+            {"username": "manager", "password": "webby001", "role": "manager"},
+        ],
+        "demo_scenario": "Aerospace Wing, Fuselage & Avionics Assembly — 3 Production Lines",
+        "next_steps": [
+            "1. Login with supervisor / spidey@01",
+            "2. Go to Active Shift → Start Shift",
+            "3. Submit some operator log entries",
+            "4. Go to Handover → Generate Report",
+            "5. Chat with the AI Assistant about your shift",
         ]
     }
