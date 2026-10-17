@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "shiftsync-aibuilder"
-  }
+    "default": "shiftsync-aibuilder",
+    "staging": "shiftsync-ai-50d6c"
+  },
+  "targets": {},
+  "etags": {}
 }

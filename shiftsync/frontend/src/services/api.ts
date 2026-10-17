@@ -1,26 +1,23 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
+// For Firebase Hosting, API is proxied via /api → Cloud Functions
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
-// Create axios instance with production-grade defaults
 const api: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 30000, // 30 second timeout
+  timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Track request count for global loading state
 let requestCount = 0;
 const onRequestStart = () => { requestCount++; };
 const onRequestEnd = () => { requestCount = Math.max(0, requestCount - 1); };
 
-// Attach JWT token to every request
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('shiftsync_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  // Add request ID for tracing
   config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   onRequestStart();
   return config;
@@ -29,7 +26,6 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return Promise.reject(error);
 });
 
-// Handle responses with centralized error handling
 api.interceptors.response.use(
   (response) => {
     onRequestEnd();
@@ -37,32 +33,23 @@ api.interceptors.response.use(
   },
   (error: AxiosError) => {
     onRequestEnd();
-
-    // Centralized 401 handling — token expired or invalid
     if (error.response?.status === 401) {
       localStorage.removeItem('shiftsync_token');
       localStorage.removeItem('shiftsync_user');
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
-      return Promise.reject(error);
     }
-
-    // 429 Rate limited — user-facing message
     if (error.response?.status === 429) {
       return Promise.reject(error);
     }
-
-    // 500+ Server errors — log and return structured error
     if (error.response?.status && error.response.status >= 500) {
       console.error('[ShiftSync API] Server error:', error.response.status, error.message);
     }
-
     return Promise.reject(error);
   }
 );
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
 export const authApi = {
   login: (username: string, password: string) =>
     api.post('/auth/login', { username, password }),
@@ -70,7 +57,6 @@ export const authApi = {
   me: () => api.get('/auth/me'),
 };
 
-// ─── Shifts ───────────────────────────────────────────────────────────────────
 export const shiftsApi = {
   create: (data: object) => api.post('/shifts/', data),
   getActive: (line?: string) => api.get('/shifts/active', { params: { line } }),
@@ -81,7 +67,6 @@ export const shiftsApi = {
     api.post(`/shifts/${id}/complete`, null, { params: { production_actual: productionActual } }),
 };
 
-// ─── Logs ─────────────────────────────────────────────────────────────────────
 export const logsApi = {
   submit: (data: object) => api.post('/logs/', data),
   getForShift: (shiftId: string, limit = 100, offset = 0) =>
@@ -90,7 +75,6 @@ export const logsApi = {
   getRecent: (limit = 50) => api.get('/logs/recent', { params: { limit } }),
 };
 
-// ─── Handover ─────────────────────────────────────────────────────────────────
 export const handoverApi = {
   generate: (shiftId: string) =>
     api.post('/handover/generate', { shift_id: shiftId }),
@@ -99,7 +83,6 @@ export const handoverApi = {
   getLatest: (line: string) => api.get(`/handover/latest/${line}`),
 };
 
-// ─── Machines ─────────────────────────────────────────────────────────────────
 export const machinesApi = {
   getAll: () => api.get('/machines/'),
   getById: (id: string) => api.get(`/machines/${id}`),
@@ -108,7 +91,6 @@ export const machinesApi = {
   bulkUpdate: (updates: object[]) => api.post('/machines/bulk-status', updates),
 };
 
-// ─── AI ───────────────────────────────────────────────────────────────────────
 export const aiApi = {
   chat: (message: string, shiftId?: string, history?: object[]) =>
     api.post('/ai/chat', {
@@ -124,13 +106,10 @@ export const aiApi = {
     api.post('/ai/analyze-trend', null, { params: { line, days } }),
 };
 
-// ─── Seed ─────────────────────────────────────────────────────────────────────
 export const seedApi = {
   seedDemo: () => api.post('/seed/demo-data'),
   initUsers: () => api.post('/seed/init-users'),
 };
 
 export default api;
-
-// Export request count for global loading indicator
 export { requestCount };

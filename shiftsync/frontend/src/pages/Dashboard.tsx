@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { aiApi, shiftsApi } from '../services/api';
 import Card, { CardHeader, CardTitle } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
+import Button from '../components/ui/Button';
 import { format } from 'date-fns';
 import { DashboardStats, MachineStatus } from '../types';
 import clsx from 'clsx';
@@ -33,25 +34,23 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: '#22c55e',
 };
 
-function StatCard({ label, value, icon: Icon, color, subtext, trend }: {
+function StatCard({ label, value, icon: Icon, color, subtext }: {
   label: string; value: string | number; icon: React.ComponentType<{ className?: string }>;
-  color: string; subtext?: string; trend?: 'up' | 'down' | 'neutral';
+  color: string; subtext?: string;
 }) {
   return (
-    <Card>
+    <div className="stat-card">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-slate-400 text-xs font-medium mb-1">{label}</p>
-          <p className={clsx('text-2xl font-bold', color)}>{value}</p>
-          {subtext && <p className="text-slate-500 text-xs mt-1">{subtext}</p>}
+          <p className="text-xs font-medium text-slate-400 mb-1">{label}</p>
+          <p className="text-2xl font-bold text-slate-100">{value}</p>
+          {subtext && <p className="text-xs text-slate-500 mt-1">{subtext}</p>}
         </div>
-        <div className={clsx('p-2 rounded-lg', color === 'text-green-400' ? 'bg-green-500/10' :
-          color === 'text-red-400' ? 'bg-red-500/10' :
-          color === 'text-blue-400' ? 'bg-blue-500/10' : 'bg-orange-500/10')}>
-          <Icon className={clsx('w-5 h-5', color)} aria-hidden="true" />
+        <div className="p-2 rounded-lg bg-slate-700/50">
+          <Icon className="w-5 h-5 text-slate-400" aria-hidden="true" />
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -78,19 +77,6 @@ function MachineStatusDot({ status }: { status: MachineStatus }) {
   );
 }
 
-function OEEHistorySkeleton() {
-  return (
-    <Card className="animate-pulse">
-      <CardHeader>
-        <CardTitle icon={TrendingUp}>OEE Trend — Today</CardTitle>
-      </CardHeader>
-      <div className="h-80 flex items-center justify-center">
-        <div className="w-full h-4 bg-slate-700/50 rounded-full animate-pulse" />
-      </div>
-    </Card>
-  );
-}
-
 export default function Dashboard() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -103,8 +89,6 @@ export default function Dashboard() {
 
   const handleRefresh = () => setRefreshTrigger(Date.now());
 
-  // Build machine list from WebSocket or REST data
-
   if (isLoading && !stats) {
     return (
       <div className="space-y-6 animate-fade-in">
@@ -115,13 +99,25 @@ export default function Dashboard() {
               {format(new Date(), 'EEEE, MMMM d, yyyy')} · Real-time intelligence
             </p>
           </div>
+          <button
+            onClick={handleRefresh}
+            className="p-2 text-slate-400 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+            aria-label="Refresh dashboard"
+          >
+            <RefreshCw className="w-4 h-4" aria-hidden="true" />
+          </button>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <Card key={i} className="animate-pulse">
-              <SkeletonLoader width="60%" height="20px" />
-              <SkeletonLoader width="100%" height="28px" className="mt-2" radius="full" />
-            </Card>
+            <div key={i} className="stat-card animate-pulse">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium text-slate-400 mb-1">Loading</p>
+                  <p className="text-2xl font-bold text-slate-100 animate-pulse">--</p>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-700/50 animate-pulse" />
+              </div>
+            </div>
           ))}
         </div>
         <SkeletonText lines={2} />
@@ -168,7 +164,7 @@ export default function Dashboard() {
           )}
           <button
             onClick={handleRefresh}
-            className="p-1.5 text-slate-400 hover:text-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded transition-colors"
+            className="p-2 text-slate-400 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
             aria-label="Refresh dashboard data"
           >
             <span className="sr-only">Refresh</span>
@@ -212,47 +208,49 @@ export default function Dashboard() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* OEE Trend */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex items-center justify-between">
-            <div>
-              <CardTitle icon={TrendingUp}>OEE Trend — Today</CardTitle>
+        <div className="lg:col-span-2">
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <TrendingUp className="w-4 h-4" aria-hidden="true" />
+                OEE Trend — Today
+              </div>
               <span className="text-xs text-slate-500">Updated live · every 30s</span>
             </div>
-            <button
-              onClick={handleRefresh}
-              className="p-1.5 text-slate-400 hover:text-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded"
-              aria-label="Refresh data"
-            >
+            <div className="button-ghost" onClick={handleRefresh} style={{ padding: '0.5rem', borderRadius: '0.5rem', marginBottom: '1rem', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
               <span className="sr-only">Refresh</span>
               <RefreshCw className="w-4 h-4" aria-hidden="true" />
-            </button>
-          </CardHeader>
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={OEE_TREND} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
-              <defs>
-                <linearGradient id="oeeGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 11 }} />
-              <YAxis domain={[60, 100]} tick={{ fill: '#64748b', fontSize: 11 }} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
-                labelStyle={{ color: '#94a3b8' }}
-                itemStyle={{ color: '#3b82f6' }}
-              />
-              <Area type="monotone" dataKey="oee" stroke="#3b82f6" fill="url(#oeeGrad)" strokeWidth={2} dot={{ fill: '#3b82f6', r: 3 }} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
+            </div>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={OEE_TREND} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
+                <defs>
+                  <linearGradient id="oeeGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 11 }} />
+                <YAxis domain={[60, 100]} tick={{ fill: '#64748b', fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px' }}
+                  labelStyle={{ color: '#94a3b8' }}
+                  itemStyle={{ color: '#3b82f6' }}
+                />
+                <Area type="monotone" dataKey="oee" stroke="#3b82f6" fill="url(#oeeGrad)" strokeWidth={2} dot={{ fill: '#3b82f6', r: 3 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
 
         {/* Machine Status Pie */}
-        <Card>
-          <CardHeader>
-            <CardTitle icon={Cpu}>Machine Status</CardTitle>
-          </CardHeader>
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">
+              <Cpu className="w-4 h-4" aria-hidden="true" />
+              Machine Status
+            </div>
+          </div>
           <div className="flex flex-col items-center">
             <ResponsiveContainer width="100%" height={130}>
               <PieChart>
@@ -285,7 +283,7 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* Live Machine Cards */}
@@ -298,13 +296,16 @@ export default function Dashboard() {
       {/* Recent Alerts + Active Shift Info */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Recent Alerts */}
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle icon={AlertTriangle}>Recent Alerts</CardTitle>
+        <div className="card">
+          <div className="card-header flex items-center justify-between">
+            <div className="card-title">
+              <AlertTriangle className="w-4 h-4" aria-hidden="true" />
+              Recent Alerts
+            </div>
             <a href="/alerts" className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1" aria-label="View all alerts">
               View all <ArrowUpRight className="w-3 h-3" aria-hidden="true" />
             </a>
-          </CardHeader>
+          </div>
           <div className="space-y-2" role="list" aria-label="Recent alerts">
             {stats?.recent_alerts?.length ? stats.recent_alerts.slice(0, 5).map((alert) => (
               <div key={alert.id} className="flex items-start gap-3 py-2 border-b border-slate-700/50 last:border-0" role="listitem">
@@ -321,13 +322,16 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        </Card>
+        </div>
 
         {/* Active Shift Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle icon={Activity}>Active Shift</CardTitle>
-          </CardHeader>
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">
+              <Activity className="w-4 h-4" aria-hidden="true" />
+              Active Shift
+            </div>
+          </div>
           {stats?.active_shift ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -376,7 +380,7 @@ export default function Dashboard() {
               <a href="/shift" className="text-xs text-blue-400 hover:text-blue-300">Start a shift →</a>
             </div>
           )}
-        </Card>
+        </div>
       </div>
     </div>
   );

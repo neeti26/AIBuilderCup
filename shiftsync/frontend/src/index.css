@@ -13,34 +13,11 @@
   }
   
   body {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     background-color: #0f172a;
     color: #e2e8f0;
-    font-size: 1.25rem !important;
-  }
-
-  /* Nuclear option: Target ALL Tailwind text utility classes via attribute selectors
-     These have higher specificity than regular class selectors */
-  [class*="text-xs"], [class*="text-sm"], [class*="text-base"], 
-  [class*="text-lg"], [class*="text-xl"], [class*="text-2xl"], 
-  [class*="text-3xl"], [class*="text-4xl"] {
-    font-size: 1.25rem !important;
-  }
-
-  h1 { font-size: 2rem !important; font-weight: 700; }
-  h2 { font-size: 1.75rem !important; font-weight: 600; }
-  h3 { font-size: 1.5rem !important; font-weight: 600; }
-  p { font-size: 1.25rem !important; line-height: 1.6; }
-  label { font-size: 1.125rem !important; font-weight: 500; }
-  button { font-size: 1.125rem !important; font-weight: 500; padding: 0.875rem 1.75rem !important; }
-  input, select, textarea { font-size: 1.125rem !important; padding: 0.75rem !important; }
-  
-  /* Sidebar, nav, badges, cards */
-  nav a, .nav-label, [class*="sidebar"], [class*="badge"] span {
-    font-size: 1.125rem !important;
-  }
-  [class*="Card"] p, [class*="Card"] span, .card p, .card span {
-    font-size: 1.125rem !important;
+    font-size: 1rem;
+    line-height: 1.5;
   }
 
   /* Custom scrollbar */
@@ -66,6 +43,102 @@
   }
 }
 
+@layer components {
+  /* Stat cards */
+  .stat-card {
+    @apply bg-slate-800 border border-slate-700 rounded-xl p-6 transition-all duration-300 hover:border-blue-500/50;
+  }
+  
+  .stat-card:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Machine cards */
+  .machine-card {
+    @apply bg-slate-800 border border-slate-700 rounded-xl p-5 transition-all duration-300 group hover:border-blue-500/40;
+  }
+  
+  .machine-card:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Buttons */
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2.5 rounded-lg transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-secondary {
+    @apply bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium px-4 py-2.5 rounded-lg transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-ghost {
+    @apply bg-transparent hover:bg-slate-700 text-slate-300 font-medium px-4 py-2.5 rounded-lg transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-success {
+    @apply bg-green-600 hover:bg-green-500 text-white font-medium px-4 py-2.5 rounded-lg transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-500 text-white font-medium px-4 py-2.5 rounded-lg transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Inputs */
+  .input-field {
+    @apply w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-3 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200;
+  }
+  
+  .input-label {
+    @apply block text-xs font-medium text-slate-400 mb-1.5;
+  }
+
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .badge-critical { @apply bg-red-500/20 text-red-400 border border-red-500/30; }
+  .badge-high { @apply bg-orange-500/20 text-orange-400 border border-orange-500/30; }
+  .badge-medium { @apply bg-yellow-500/20 text-yellow-400 border border-yellow-500/30; }
+  .badge-low { @apply bg-green-500/20 text-green-400 border border-green-500/30; }
+  .badge-info { @apply bg-blue-500/20 text-blue-400 border border-blue-500/30; }
+
+  /* Cards */
+  .card {
+    @apply bg-slate-800 border border-slate-700 rounded-xl p-6;
+  }
+  
+  .card-header {
+    @apply flex items-center justify-between mb-4;
+  }
+  
+  .card-title {
+    @apply text-sm font-semibold text-slate-200 flex items-center gap-2;
+  }
+
+  /* Alert banner */
+  .alert-banner {
+    @apply border-b px-6 py-3 transition-all duration-300 flex items-start gap-3;
+  }
+  .alert-banner-critical {
+    @apply bg-red-950/80 border-red-600/50;
+  }
+  .alert-banner-high {
+    @apply bg-amber-950/80 border-amber-600/50;
+  }
+
+  /* Skeleton */
+  .skeleton {
+    @apply bg-slate-700/40 rounded animate-pulse;
+  }
+  .skeleton-text {
+    @apply bg-slate-700/40 rounded animate-pulse h-4 mb-2;
+  }
+  .skeleton-text.last {
+    width: 60%;
+  }
+}
+
 @layer utilities {
   .animate-fade-in {
     animation: fadeIn 0.3s ease-out;
@@ -74,7 +147,7 @@
   .animate-slide-up {
     animation: slideUp 0.3s ease-out;
   }
-
+  
   .animate-shimmer {
     animation: shimmer 2s infinite;
   }
@@ -98,76 +171,60 @@
     background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
     background-size: 200% 100%;
   }
+
+  /* Layout spacing */
+  main { padding: 1.5rem; }
+  .space-y-6 > * { margin-bottom: 1.5rem; }
+  .gap-4 { gap: 1.5rem; }
+  .gap-6 { gap: 2rem; }
+  .p-6 { padding: 1.5rem; }
+  .p-8 { padding: 2rem; }
+  .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+
+  /* Print styles */
+  @media print {
+    .no-print { display: none !important; }
+    .print-only { display: block !important; }
+    body { background-color: white !important; color: #0f172a !important; font-size: 11pt; }
+    .bg-slate-900, .bg-slate-800, .bg-slate-700 { background-color: white !important; }
+    .text-slate-200, .text-slate-300, .text-slate-400, .text-slate-500, .text-white { color: #0f172a !important; }
+    .border-slate-700, .border-slate-600 { border-color: #cbd5e1 !important; }
+    .text-blue-400, .text-green-400, .text-red-400, .text-yellow-400, .text-orange-400 { color: #0f172a !important; }
+    a { text-decoration: none; color: inherit; }
+    button, .btn, .no-print-button { display: none !important; }
+    @page { margin: 1.5cm; 
+      @bottom-center { content: "ShiftSync AI — AI Generated Handover Report"; font-size: 8pt; color: #64748b; }
+      @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #64748b; }
+    }
+  }
 }
 
-/* Layout spacing — more breathing room */
-main { padding: 1.5rem !important; }
-.card, [class*="Card"] { padding: 1.5rem !important; gap: 1rem !important; }
-.space-y-6 > * { margin-bottom: 1.5rem !important; }
-.gap-4 { gap: 1.5rem !important; }
-.gap-6 { gap: 2rem !important; }
-.p-6 { padding: 1.5rem !important; }
-.p-8 { padding: 2rem !important; }
-.py-6 { padding-top: 1.5rem !important; padding-bottom: 1.5rem !important; }
+/* Text size overrides for better readability */
+.text-xs { font-size: 0.75rem !important; }
+.text-sm { font-size: 0.875rem !important; }
+.text-base { font-size: 1rem !important; }
+.text-lg { font-size: 1.125rem !important; }
+.text-xl { font-size: 1.25rem !important; }
+.text-2xl { font-size: 1.5rem !important; }
+.text-3xl { font-size: 1.875rem !important; }
 
-/* Print styles — handover report ready for PDF/physical handover */
-@media print {
-  .no-print {
-    display: none !important;
-  }
+h1 { font-size: 1.875rem !important; font-weight: 700; }
+h2 { font-size: 1.5rem !important; font-weight: 600; }
+h3 { font-size: 1.25rem !important; font-weight: 600; }
+p { font-size: 1rem !important; line-height: 1.6; }
+label { font-size: 0.875rem !important; font-weight: 500; }
+button { font-size: 0.875rem !important; font-weight: 500; }
+input, select, textarea { font-size: 0.875rem !important; }
 
-  .print-only {
-    display: block !important;
-  }
+/* Sidebar navigation */
+nav a, [role="navigation"] a {
+  font-size: 0.875rem !important;
+}
 
-  body {
-    background-color: white !important;
-    color: #0f172a !important;
-    font-size: 11pt;
-  }
+[class*="badge"] span, [class*="Badge"] {
+  font-size: 0.75rem !important;
+}
 
-  .bg-slate-900, .bg-slate-800, .bg-slate-700 {
-    background-color: white !important;
-  }
-
-  .text-slate-200, .text-slate-300, .text-slate-400, .text-slate-500, .text-white {
-    color: #0f172a !important;
-  }
-
-  .border-slate-700, .border-slate-600 {
-    border-color: #cbd5e1 !important;
-  }
-
-  .text-blue-400, .text-green-400, .text-red-400, .text-yellow-400, .text-orange-400 {
-    color: #0f172a !important;
-  }
-
-  a {
-    text-decoration: none;
-    color: inherit;
-  }
-
-  .no-print-button,
-  button,
-  .btn {
-    display: none !important;
-  }
-
-  .report-header-print {
-    page-break-after: always;
-  }
-
-  @page {
-    margin: 1.5cm;
-    @bottom-center {
-      content: "ShiftSync AI — AI Generated Handover Report";
-      font-size: 8pt;
-      color: #64748b;
-    }
-    @bottom-right {
-      content: "Page " counter(page) " of " counter(pages);
-      font-size: 8pt;
-      color: #64748b;
-    }
-  }
+[class*="Card"] p, [class*="Card"] span, .card p, .card span {
+  font-size: 0.875rem !important;
 }

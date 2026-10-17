@@ -30,7 +30,6 @@ export default function ShiftPage() {
   const { activeShift, setActiveShift, logs, setLogs, addLog } = useShiftStore();
   const queryClient = useQueryClient();
 
-  // Local form state
   const [logText, setLogText] = useState('');
   const [selectedMachine, setSelectedMachine] = useState('');
   const [showStartShift, setShowStartShift] = useState(false);
@@ -42,11 +41,10 @@ export default function ShiftPage() {
     date: format(new Date(), 'yyyy-MM-dd'),
   });
 
-  // Load active shifts with polling
   const { isLoading: shiftsLoading, data: shiftsData, refetch } = useQuery({
     queryKey: ['active-shifts'],
     queryFn: () => shiftsApi.getActive().then(r => r.data),
-    refetchInterval: 10000, // Poll every 10s for new active shifts
+    refetchInterval: 10000,
     refetchIntervalInBackground: true,
   });
 
@@ -56,12 +54,11 @@ export default function ShiftPage() {
     }
   }, [shiftsData, activeShift, setActiveShift]);
 
-  // Load logs for active shift with polling
   const { isLoading: logsLoading, data: logsData } = useQuery({
     queryKey: ['shift-logs', activeShift?.id],
     queryFn: () => logsApi.getForShift(activeShift!.id).then(r => r.data),
     enabled: !!activeShift?.id,
-    refetchInterval: 5000, // Poll every 5s for new logs
+    refetchInterval: 5000,
     refetchIntervalInBackground: true,
   });
 
@@ -69,7 +66,6 @@ export default function ShiftPage() {
     if (logsData?.logs) setLogs(logsData.logs);
   }, [logsData, setLogs]);
 
-  // Create shift mutation
   const createShiftMutation = useMutation({
     mutationFn: (data: object) => shiftsApi.create(data),
     onSuccess: (response) => {
@@ -85,7 +81,6 @@ export default function ShiftPage() {
     },
   });
 
-  // Submit log mutation
   const submitLogMutation = useMutation({
     mutationFn: (data: object) => logsApi.submit(data),
     onSuccess: (response) => {
@@ -154,7 +149,6 @@ export default function ShiftPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white">Active Shift</h1>
@@ -163,54 +157,60 @@ export default function ShiftPage() {
           </p>
         </div>
         {!activeShift && (
-          <Button
+          <button
             onClick={() => setShowStartShift(true)}
-            icon={<Plus className="w-4 h-4" aria-hidden="true" />}
+            className="btn-primary"
           >
+            <Sparkles className="w-4 h-4" aria-hidden="true" />
             Start Shift
-          </Button>
+          </button>
         )}
         {activeShift && (
-          <Button
+          <button
             onClick={() => refetch()}
-            variant="ghost"
-            size="sm"
-            icon={<RefreshCw className="w-4 h-4" aria-hidden="true" />}
-            className="text-slate-400 hover:text-blue-400"
+            className="btn-ghost text-slate-400 hover:text-blue-400"
             aria-label="Refresh shift data"
           >
-            Refresh
-          </Button>
+            <RefreshCw className="w-4 h-4" aria-hidden="true" />
+          </button>
         )}
       </div>
 
-      {/* Start Shift Modal */}
       {showStartShift && (
-        <Card className="border-blue-600/40 bg-blue-950/20">
-          <CardHeader>
-            <CardTitle icon={ClipboardList}>Start New Shift</CardTitle>
-            <button onClick={() => setShowStartShift(false)} className="text-slate-400 hover:text-slate-200 text-xs" aria-label="Cancel">Cancel</button>
-          </CardHeader>
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">
+              <ClipboardList className="w-4 h-4" aria-hidden="true" />
+              Start New Shift
+            </div>
+            <button
+              onClick={() => setShowStartShift(false)}
+              className="text-slate-400 hover:text-slate-200 text-xs focus:outline-none"
+              aria-label="Cancel"
+            >
+              Cancel
+            </button>
+          </div>
           <form onSubmit={(e) => { e.preventDefault(); handleStartShift(); }} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs text-slate-400 mb-1 block" htmlFor="shift-type">Shift Type</label>
+                <label className="input-label">Shift Type</label>
                 <select
                   id="shift-type"
                   value={newShift.shift_type}
                   onChange={e => setNewShift(p => ({ ...p, shift_type: e.target.value }))}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input-field"
                 >
                   {SHIFT_TYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs text-slate-400 mb-1 block" htmlFor="line">Production Line</label>
+                <label className="input-label">Production Line</label>
                 <select
                   id="line"
                   value={newShift.line}
                   onChange={e => setNewShift(p => ({ ...p, line: e.target.value }))}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input-field"
                 >
                   {LINES.map(l => <option key={l}>{l}</option>)}
                 </select>
@@ -218,15 +218,15 @@ export default function ShiftPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs text-slate-400 mb-1 block" htmlFor="production-target">Production Target (units)</label>
+                <label className="input-label">Production Target (units)</label>
                 <input
                   id="production-target"
                   type="number"
                   value={newShift.production_target}
                   onChange={e => setNewShift(p => ({ ...p, production_target: parseInt(e.target.value) || 0 }))}
                   className={clsx(
-                    'w-full bg-slate-700 border rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2',
-                    formErrors.production_target ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
+                    'input-field',
+                    formErrors.production_target ? 'border-red-500 focus:ring-red-500' : 'border-slate-600'
                   )}
                 />
                 {formErrors.production_target && (
@@ -234,31 +234,34 @@ export default function ShiftPage() {
                 )}
               </div>
               <div>
-                <label className="text-xs text-slate-400 mb-1 block" htmlFor="shift-date">Date</label>
+                <label className="input-label">Date</label>
                 <input
                   id="shift-date"
                   type="date"
                   value={newShift.date}
                   onChange={e => setNewShift(p => ({ ...p, date: e.target.value }))}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input-field"
                 />
               </div>
             </div>
             <div className="mt-4 flex gap-3">
-              <Button type="submit" loading={createShiftMutation.isPending}>
-                Start Shift
-              </Button>
-              <Button variant="secondary" type="button" onClick={() => setShowStartShift(false)}>
+              <button
+                type="submit"
+                disabled={createShiftMutation.isPending}
+                className="btn-primary"
+              >
+                {createShiftMutation.isPending ? 'Starting...' : 'Start Shift'}
+              </button>
+              <button type="button" onClick={() => setShowStartShift(false)} className="btn-secondary">
                 Cancel
-              </Button>
+              </button>
             </div>
           </form>
-        </Card>
+        </div>
       )}
 
-      {/* Active Shift Banner */}
       {activeShift && (
-        <Card className="border-green-600/30 bg-green-950/10">
+        <div className="card border-green-600/30 bg-green-950/10">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" aria-hidden="true" />
@@ -276,45 +279,43 @@ export default function ShiftPage() {
               ID: {activeShift.id}
             </div>
           </div>
-        </Card>
+        </div>
       )}
 
-      {/* Log Entry Form */}
       {activeShift && (
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle icon={Sparkles}>New Log Entry</CardTitle>
+        <div className="card">
+          <div className="card-header flex items-center justify-between">
+            <div className="card-title">
+              <Sparkles className="w-4 h-4" aria-hidden="true" />
+              New Log Entry
+            </div>
             <span className="text-xs text-slate-500 flex items-center gap-1">
               <Sparkles className="w-3 h-3" aria-hidden="true" /> AI-powered analysis
             </span>
-          </CardHeader>
+          </div>
           <form onSubmit={handleSubmitLog} aria-label="Submit operator log entry">
-            <div className="mb-3">
-              <label htmlFor="machine-select" className="text-xs text-slate-400 mb-1.5 block">
-                Machine / Asset (optional)
-              </label>
+            <div className="mb-4">
+              <label className="input-label">Machine / Asset (optional)</label>
               <select
                 id="machine-select"
                 value={selectedMachine}
                 onChange={e => setSelectedMachine(e.target.value)}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="input-field"
               >
                 <option value="">General / No specific machine</option>
                 {MACHINE_IDS.map(id => <option key={id} value={id}>{id}</option>)}
               </select>
             </div>
-            <div className="mb-3">
-              <label htmlFor="log-text" className="text-xs text-slate-400 mb-1.5 block">
-                Log Entry <span className="text-slate-500">(describe what happened — AI will classify and extract action items)</span>
-              </label>
+            <div className="mb-4">
+              <label className="input-label">Log Entry</label>
               <textarea
                 id="log-text"
                 value={logText}
                 onChange={e => setLogText(e.target.value)}
                 placeholder="e.g. CNC-A01 showing intermittent spindle fault E-047. Machine stopped twice during the 08:00–10:00 window. Maintenance notified. Parts reworked and released after inspection..."
                 className={clsx(
-                  'w-full bg-slate-700 border rounded-lg px-3 py-3 text-slate-200 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 resize-none',
-                  formErrors.raw_text ? 'border-red-500 focus:ring-red-500' : 'border-slate-600 focus:ring-blue-500'
+                  'input-field',
+                  formErrors.raw_text ? 'border-red-500 focus:ring-red-500' : 'border-slate-600'
                 )}
                 rows={4}
                 minLength={10}
@@ -329,31 +330,30 @@ export default function ShiftPage() {
               <p className="text-slate-500 text-xs">
                 Gemini AI will automatically classify severity, category, and generate action items
               </p>
-              <Button
+              <button
                 type="submit"
-                loading={submitLogMutation.isPending}
-                icon={<Send className="w-3.5 h-3.5" aria-hidden="true" />}
                 disabled={!logText.trim() || submitLogMutation.isPending}
+                className="btn-primary"
               >
-                Submit & Analyze
-              </Button>
+                {submitLogMutation.isPending ? 'Analyzing...' : 'Submit & Analyze'}
+              </button>
             </div>
           </form>
-        </Card>
+        </div>
       )}
 
-      {/* Log Feed */}
       {activeShift && (
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle icon={ClipboardList}>
+        <div className="card">
+          <div className="card-header flex items-center justify-between">
+            <div className="card-title">
+              <ClipboardList className="w-4 h-4" aria-hidden="true" />
               Shift Log Feed ({logs.length} entries)
-            </CardTitle>
+            </div>
             <div className="flex items-center gap-2">
               {logsLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" aria-hidden="true" />}
               <span className="text-xs text-slate-500">Live updates every 5s</span>
             </div>
-          </CardHeader>
+          </div>
 
           {logs.length === 0 ? (
             <div className="text-center py-10 text-slate-500">
@@ -364,7 +364,7 @@ export default function ShiftPage() {
             <div className="space-y-3" role="feed" aria-label="Shift log entries">
               {logs.map((log) => (
                 <article key={log.id} className={clsx(
-                  'border-l-2 pl-4 py-2',
+                  'border-l-2 pl-4 py-3',
                   log.severity === 'critical' ? 'border-red-500' :
                   log.severity === 'high' ? 'border-orange-500' :
                   log.severity === 'medium' ? 'border-yellow-500' :
@@ -391,11 +391,11 @@ export default function ShiftPage() {
                   </div>
                   <p className="text-slate-300 text-sm mb-2">{log.raw_text}</p>
                   {log.ai_summary && (
-                    <div className="bg-blue-950/30 border border-blue-600/20 rounded-lg p-2.5 mb-2">
+                    <div className="bg-blue-950/30 border border-blue-600/20 rounded-lg p-3 mb-3">
                       <p className="text-xs text-blue-400 font-medium mb-0.5 flex items-center gap-1">
                         <Sparkles className="w-3 h-3" aria-hidden="true" /> AI Analysis
                       </p>
-                      <p className="text-slate-300 text-xs">{log.ai_summary}</p>
+                      <p className="text-slate-300 text-sm">{log.ai_summary}</p>
                       {log.root_cause_hint && (
                         <p className="text-slate-400 text-xs mt-1">
                           <span className="font-medium">Root cause hint:</span> {log.root_cause_hint}
@@ -431,18 +431,19 @@ export default function ShiftPage() {
               ))}
             </div>
           )}
-        </Card>
+        </div>
       )}
 
       {!activeShift && !shiftsLoading && !showStartShift && (
-        <Card className="text-center py-16">
+        <div className="card text-center py-16">
           <ClipboardList className="w-12 h-12 text-slate-600 mx-auto mb-3" aria-hidden="true" />
           <h2 className="text-slate-300 font-semibold mb-2">No Active Shift</h2>
           <p className="text-slate-500 text-sm mb-4">Start a shift to begin logging events and generating AI-powered handover reports.</p>
-          <Button onClick={() => setShowStartShift(true)} icon={<Plus className="w-4 h-4" aria-hidden="true" />}>
+          <button onClick={() => setShowStartShift(true)} className="btn-primary">
+            <Plus className="w-4 h-4" aria-hidden="true" />
             Start Shift
-          </Button>
-        </Card>
+          </button>
+        </div>
       )}
     </div>
   );
