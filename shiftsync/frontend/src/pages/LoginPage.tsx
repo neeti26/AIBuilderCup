@@ -23,7 +23,7 @@ export default function LoginPage() {
     },
     onError: (error: any) => {
       console.error('Login error:', error);
-      const detail = error.response?.data?.detail || error.response?.data?.error || error.message || 'Invalid credentials';
+      const detail = error.message || error.response?.data?.detail || error.response?.data?.error || 'Invalid credentials';
       toast.error(`Login failed: ${detail}`);
     },
   });

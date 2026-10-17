@@ -19,7 +19,6 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  // Add CSRF token
   const csrfToken = getCsrfToken();
   config.headers['X-CSRF-Token'] = csrfToken;
   config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -37,20 +36,31 @@ api.interceptors.response.use(
   },
   (error: AxiosError) => {
     onRequestEnd();
+    
+    // Better error handling with proper typing
+    let errorMessage = 'An unexpected error occurred';
+    const responseData = error.response?.data as any;
+    
     if (error.response?.status === 401) {
       localStorage.removeItem('shiftsync_token');
       localStorage.removeItem('shiftsync_user');
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
+      errorMessage = 'Invalid credentials';
+    } else if (error.response?.status === 429) {
+      errorMessage = 'Rate limited. Please slow down.';
+    } else if (error.response?.status && error.response.status >= 500) {
+      errorMessage = 'Server error. Please try again later.';
+    } else if (responseData?.detail) {
+      errorMessage = responseData.detail;
+    } else if (responseData?.message) {
+      errorMessage = responseData.message;
+    } else if (error.message) {
+      errorMessage = error.message;
     }
-    if (error.response?.status === 429) {
-      return Promise.reject(error);
-    }
-    if (error.response?.status && error.response.status >= 500) {
-      console.error('[ShiftSync API] Server error:', error.response.status, error.message);
-    }
-    return Promise.reject(error);
+    
+    return Promise.reject(new Error(errorMessage));
   }
 );
 
