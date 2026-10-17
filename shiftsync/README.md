@@ -299,3 +299,4 @@ ShiftSync directly addresses the $1.4B annual cost of shift handover failures in
 ---
 
 *Built for AI Builder Cup 2025 — Singapore Finale*
+"# Ready for AI Builder Cup submission" 
