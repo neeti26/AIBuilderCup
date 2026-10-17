@@ -52,10 +52,10 @@ app.get("/auth/me", authMiddleware, async (req, res) => {
 
 // ── Seed (init demo data) ─────────────────────────────────────────────────────
 const DEMO_USERS = [
-  { username: "supervisor", full_name: "Sarah Chen", role: "supervisor", department: "Production", password: "demo123" },
-  { username: "operator", full_name: "Mike Torres", role: "operator", department: "Line-A", password: "demo123" },
-  { username: "engineer", full_name: "Priya Nair", role: "engineer", department: "Process Engineering", password: "demo123" },
-  { username: "manager", full_name: "James Okafor", role: "manager", department: "Operations", password: "demo123" },
+  { username: "supervisor", full_name: "Neeti Malu", role: "supervisor", department: "Production", password: "spidey@01" },
+  { username: "staff", full_name: "Mike Torres", role: "operator", department: "Line-A", password: "webby001" },
+  { username: "engineer", full_name: "Priya Nair", role: "engineer", department: "Process Engineering", password: "webby001" },
+  { username: "manager", full_name: "James Okafor", role: "manager", department: "Operations", password: "webby001" },
 ];
 const DEMO_MACHINES = [
   { machine_id: "CNC-A01", name: "CNC Machining Center A1", line: "Line-A", status: "running", oee: 87.3, temperature: 42.1, vibration: 0.8, active_alerts: 0 },
@@ -79,7 +79,7 @@ app.post("/seed/init-users", async (req, res) => {
     await db.createUser({ ...rest, hashed_password: hashPassword(password) });
     count++;
   }
-  res.json({ message: `Initialized ${count} demo users`, credentials: [{ username: "supervisor", password: "demo123" }, { username: "operator", password: "demo123" }] });
+  res.json({ message: `Initialized ${count} demo users`, credentials: [{ username: "supervisor", password: "spidey@01" }, { username: "staff", password: "webby001" }] });
 });
 
 app.post("/seed/demo-data", authMiddleware, async (req, res) => {
