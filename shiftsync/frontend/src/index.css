@@ -16,32 +16,32 @@
     font-family: 'Inter', system-ui, sans-serif;
     background-color: #0f172a;
     color: #e2e8f0;
-    font-size: 1.125rem !important; /* Much larger base font */
+    font-size: 1.25rem !important;
   }
 
-  /* Force larger text throughout the app — !important to override Tailwind */
-  h1 { font-size: 1.875rem !important; font-weight: 700; }
-  h2 { font-size: 1.5rem !important; font-weight: 600; }
-  h3 { font-size: 1.25rem !important; font-weight: 600; }
-  p { font-size: 1.125rem !important; line-height: 1.6; }
-  .text-xs { font-size: 0.95rem !important; }
-  .text-sm { font-size: 1rem !important; }
-  .text-base { font-size: 1.125rem !important; }
-  .text-lg { font-size: 1.25rem !important; }
-  .text-xl { font-size: 1.5rem !important; }
-  .text-2xl { font-size: 1.75rem !important; }
-  label { font-size: 1rem !important; font-weight: 500; }
-  button { font-size: 1rem !important; font-weight: 500; padding: 0.75rem 1.5rem !important; }
+  /* Nuclear option: Target ALL Tailwind text utility classes via attribute selectors
+     These have higher specificity than regular class selectors */
+  [class*="text-xs"], [class*="text-sm"], [class*="text-base"], 
+  [class*="text-lg"], [class*="text-xl"], [class*="text-2xl"], 
+  [class*="text-3xl"], [class*="text-4xl"] {
+    font-size: 1.25rem !important;
+  }
+
+  h1 { font-size: 2rem !important; font-weight: 700; }
+  h2 { font-size: 1.75rem !important; font-weight: 600; }
+  h3 { font-size: 1.5rem !important; font-weight: 600; }
+  p { font-size: 1.25rem !important; line-height: 1.6; }
+  label { font-size: 1.125rem !important; font-weight: 500; }
+  button { font-size: 1.125rem !important; font-weight: 500; padding: 0.875rem 1.75rem !important; }
   input, select, textarea { font-size: 1.125rem !important; padding: 0.75rem !important; }
   
-  /* Larger sidebar text */
-  .sidebar-text, nav a, .nav-label { font-size: 1rem !important; }
-  
-  /* Larger badge text */
-  .badge-text, [class*="badge"] { font-size: 0.875rem !important; }
-  
-  /* Larger table/card text */
-  .card-text, [class*="card"] p, [class*="card"] span { font-size: 1rem !important; }
+  /* Sidebar, nav, badges, cards */
+  nav a, .nav-label, [class*="sidebar"], [class*="badge"] span {
+    font-size: 1.125rem !important;
+  }
+  [class*="Card"] p, [class*="Card"] span, .card p, .card span {
+    font-size: 1.125rem !important;
+  }
 
   /* Custom scrollbar */
   ::-webkit-scrollbar {
