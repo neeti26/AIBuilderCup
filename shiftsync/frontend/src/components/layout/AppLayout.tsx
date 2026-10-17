@@ -5,12 +5,12 @@ import Sidebar from './Sidebar';
 import AlertBanner from '../AlertBanner';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { Menu, X } from 'lucide-react';
+import NotificationBell from '../NotificationBell';
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
 
-  // Close sidebar on route change (mobile)
   const prevPathRef = useRef(location.pathname);
   if (prevPathRef.current !== location.pathname) {
     setSidebarOpen(false);
@@ -24,7 +24,7 @@ export default function AppLayout() {
         <div className="md:hidden fixed top-4 left-4 z-50">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 bg-blue-600 text-white rounded-lg shadow-lg focus:outline-none focus:ring-2 focus-ring-blue-400"
+            className="p-2 bg-blue-600 text-white rounded-lg shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
             aria-label="Open navigation"
           >
             <Menu className="w-5 h-5" aria-hidden="true" />
@@ -79,7 +79,12 @@ export default function AppLayout() {
         )}
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <AlertBanner />
+          <div className="flex items-center justify-between px-6 py-4 bg-slate-900/50 border-b border-slate-800 z-10">
+            <AlertBanner />
+            <div className="flex items-center gap-4">
+              <NotificationBell />
+            </div>
+          </div>
           <main className="flex-1 overflow-y-auto p-6 md:p-8" id="main-content">
             <Outlet />
           </main>
