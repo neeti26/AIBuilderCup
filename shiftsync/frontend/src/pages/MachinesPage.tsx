@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Cpu, AlertTriangle, CheckCircle, Sparkles } from 'lucide-react';
+import { Cpu, AlertTriangle, CheckCircle, Sparkles, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { machinesApi } from '../services/api';
@@ -8,6 +8,7 @@ import Card, { CardHeader, CardTitle } from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import { Machine, MachineStatus, Severity } from '../types';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 const STATUS_CONFIG: Record<MachineStatus, { label: string; color: string; dot: string }> = {
   running: { label: 'Running', color: 'text-green-400', dot: 'bg-green-500 animate-pulse' },
@@ -53,7 +54,7 @@ function TelemetryMetric({ label, value, unit, warning }: {
   return (
     <div className="flex items-center justify-between text-xs">
       <span className="text-slate-500">{label}</span>
-      <span className={clsx('font-medium', warning ? 'text-orange-400' : 'text-slate-300')}>
+      <span className={clsx('font-mono font-bold', warning ? 'text-orange-400' : 'text-slate-300')}>
         {value.toFixed(1)} {unit}
       </span>
     </div>
@@ -63,11 +64,14 @@ function TelemetryMetric({ label, value, unit, warning }: {
 export default function MachinesPage() {
   const [selectedMachine, setSelectedMachine] = useState<string | null>(null);
   const [maintRec, setMaintRec] = useState<any>(null);
+  const { machines: wsMachines, isConnected } = useWebSocket();
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['machines'],
     queryFn: () => machinesApi.getAll().then(r => r.data),
     refetchInterval: 30000,
+    refetchIntervalInBackground: true,
   });
 
   const maintMutation = useMutation({
@@ -79,14 +83,31 @@ export default function MachinesPage() {
     onError: () => toast.error('Failed to get recommendation'),
   });
 
-  const machines: Machine[] = data?.machines || [];
+  const restMachines: Machine[] = data?.machines || [];
+  const machines: Machine[] = restMachines.map((m): Machine => {
+    const live = wsMachines[m.machine_id];
+    if (live) {
+      return {
+        ...m,
+        status: live.status as MachineStatus,
+        oee: live.oee,
+        temperature: live.temperature,
+        vibration: live.vibration,
+        pressure: live.pressure ?? undefined,
+        active_alerts: live.active_alerts,
+        last_updated: live.last_updated,
+      } as Machine;
+    }
+    return m;
+  });
+
   const byStatus = {
     running: machines.filter(m => m.status === 'running').length,
     fault: machines.filter(m => m.status === 'fault').length,
     maintenance: machines.filter(m => m.status === 'maintenance').length,
   };
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <div className="flex items-center justify-center h-64" role="status">
         <div className="flex items-center gap-2 text-slate-400">
@@ -99,13 +120,18 @@ export default function MachinesPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white">Machine Status</h1>
-          <p className="text-slate-400 text-sm">Real-time telemetry with AI anomaly detection</p>
+          <p className="text-slate-400 text-sm">
+            Real-time telemetry with AI anomaly detection · WebSocket live feed
+          </p>
         </div>
         <div className="flex items-center gap-4 text-sm">
+          <div className={clsx('flex items-center gap-1.5', isConnected ? 'text-green-400' : 'text-slate-500')}>
+            <div className={clsx('w-2 h-2 rounded-full', isConnected ? 'bg-green-500 animate-pulse' : 'bg-slate-600')} aria-hidden="true" />
+            <span>{isConnected ? 'Live Feed Connected' : 'Feed Disconnected'}</span>
+          </div>
           <span className="flex items-center gap-1.5 text-green-400">
             <span className="w-2 h-2 bg-green-500 rounded-full" aria-hidden="true" />
             {byStatus.running} Running
@@ -121,9 +147,8 @@ export default function MachinesPage() {
         </div>
       </div>
 
-      {/* Machine Grid */}
       <div
-        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
         role="list"
         aria-label="Machine status list"
       >
@@ -135,12 +160,13 @@ export default function MachinesPage() {
             <Card
               key={machine.machine_id}
               className={clsx(
-                'transition-all duration-200',
-                machine.status === 'fault' ? 'border-red-600/40' :
-                machine.status === 'maintenance' ? 'border-blue-600/40' : '',
+                'transition-all duration-300 cursor-pointer hover:border-blue-500/40',
+                machine.status === 'fault' ? 'border-red-600/40 bg-red-950/10' :
+                machine.status === 'maintenance' ? 'border-blue-600/40 bg-blue-950/10' : '',
                 isSelected ? 'ring-2 ring-blue-500' : ''
               )}
               role="listitem"
+              onClick={() => setSelectedMachine(selectedMachine === machine.machine_id ? null : machine.machine_id)}
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -154,7 +180,7 @@ export default function MachinesPage() {
                   </div>
                   <div>
                     <p className="text-slate-200 text-sm font-medium">{machine.name || machine.machine_id}</p>
-                    <p className="text-slate-500 text-xs">{machine.machine_id} · {machine.line}</p>
+                    <p className="text-slate-500 text-[10px]">{machine.machine_id} · {machine.line}</p>
                   </div>
                 </div>
                 <div className={clsx('flex items-center gap-1.5 text-xs font-medium', statusConfig.color)}>
@@ -163,32 +189,30 @@ export default function MachinesPage() {
                 </div>
               </div>
 
-              {/* OEE */}
               {machine.oee != null && (
                 <div className="mb-3">
-                  <span className="text-xs text-slate-500 block mb-1">OEE</span>
+                  <span className="text-[10px] text-slate-500 block mb-1">OEE</span>
                   <OEEBar oee={machine.oee} />
                 </div>
               )}
 
-              {/* Telemetry */}
               <div className="space-y-1 mb-3">
                 <TelemetryMetric label="Temperature" value={machine.temperature} unit="°C"
                   warning={(machine.temperature || 0) > 80} />
                 <TelemetryMetric label="Vibration" value={machine.vibration} unit="mm/s"
                   warning={(machine.vibration || 0) > 2.5} />
-                <TelemetryMetric label="Pressure" value={machine.pressure} unit="bar" />
+                {machine.pressure != null && (
+                  <TelemetryMetric label="Pressure" value={machine.pressure} unit="bar" />
+                )}
               </div>
 
-              {/* Alerts */}
               {machine.active_alerts > 0 && (
                 <div className="flex items-center gap-1.5 text-xs text-orange-400 mb-3">
-                  <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
+                  <AlertTriangle className="w-3.5 h-3.5 animate-pulse" aria-hidden="true" />
                   {machine.active_alerts} active alert{machine.active_alerts > 1 ? 's' : ''}
                 </div>
               )}
 
-              {/* AI Recommendation Button */}
               <div className="pt-3 border-t border-slate-700/50">
                 <Button
                   variant="ghost"
@@ -210,13 +234,16 @@ export default function MachinesPage() {
         })}
       </div>
 
-      {/* Maintenance Recommendation Panel */}
       {maintRec && (
         <Card className="border-blue-600/40 bg-blue-950/20">
-          <CardHeader>
-            <CardTitle icon={Sparkles}>
-              AI Maintenance Recommendation — {maintRec.machine_name}
-            </CardTitle>
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="text-slate-200 text-sm font-bold flex items-center gap-2">
+                <Sparkles className="w-4 h-4" aria-hidden="true" />
+                AI Maintenance Recommendation
+              </h2>
+              <p className="text-slate-400 text-[10px]">{maintRec.machine_name}</p>
+            </div>
             <button
               onClick={() => setMaintRec(null)}
               className="text-slate-400 hover:text-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 rounded px-2 py-1"
@@ -224,11 +251,11 @@ export default function MachinesPage() {
             >
               Dismiss
             </button>
-          </CardHeader>
+          </div>
 
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div className="bg-slate-700/50 rounded-lg p-3">
-              <p className="text-xs text-slate-400 mb-1">Health Score</p>
+              <p className="text-[10px] text-slate-400 mb-1">Health Score</p>
               <p className={clsx('text-2xl font-bold',
                 maintRec.recommendation?.health_score >= 70 ? 'text-green-400' : 'text-red-400'
               )}>
@@ -236,7 +263,7 @@ export default function MachinesPage() {
               </p>
             </div>
             <div className="bg-slate-700/50 rounded-lg p-3">
-              <p className="text-xs text-slate-400 mb-1">Failure Risk</p>
+              <p className="text-[10px] text-slate-400 mb-1">Failure Risk</p>
               <Badge
                 severity={
                   maintRec.recommendation?.predicted_failure_risk === 'critical' ? 'critical' :
@@ -250,12 +277,12 @@ export default function MachinesPage() {
 
           {maintRec.recommendation?.reasoning && (
             <div className="bg-slate-700/30 rounded-lg p-3 mb-3">
-              <p className="text-xs text-slate-400 mb-1">AI Reasoning</p>
+              <p className="text-[10px] text-slate-400 mb-1">AI Reasoning</p>
               <p className="text-slate-300 text-sm">{maintRec.recommendation.reasoning}</p>
             </div>
           )}
 
-          {maintRec.recommendation?.specific_actions?.length > 0 && (
+          {maintRec.recommendation?.specific_actions && maintRec.recommendation.specific_actions.length > 0 && (
             <div className="space-y-2" role="list" aria-label="Recommended actions">
               {maintRec.recommendation.specific_actions.map((action: any, i: number) => (
                 <div key={i} className="flex items-start gap-3 py-2 border-b border-slate-700/50 last:border-0" role="listitem">
@@ -268,7 +295,7 @@ export default function MachinesPage() {
                   />
                   <div className="flex-1">
                     <p className="text-slate-200 text-sm">{action.action}</p>
-                    <p className="text-slate-500 text-xs">{action.estimated_duration}</p>
+                    <p className="text-slate-500 text-[10px]">{action.estimated_duration}</p>
                   </div>
                 </div>
               ))}
@@ -281,7 +308,7 @@ export default function MachinesPage() {
         <Card className="text-center py-16">
           <Cpu className="w-10 h-10 text-slate-600 mx-auto mb-3" aria-hidden="true" />
           <p className="text-slate-300 font-medium mb-1">No machines registered</p>
-          <p className="text-slate-500 text-sm">Use the demo seed endpoint to load sample machine data.</p>
+          <p className="text-slate-500 text-sm">WebSocket telemetry simulator provides live machine data.</p>
         </Card>
       )}
     </div>

@@ -1,8 +1,8 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   Activity, AlertTriangle, Cpu, TrendingUp,
   CheckCircle, XCircle, Clock, Zap, ArrowUpRight,
-  RefreshCw, Loader2
+  RefreshCw
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -16,6 +16,7 @@ import { format } from 'date-fns';
 import { DashboardStats, MachineStatus } from '../types';
 import clsx from 'clsx';
 import { SkeletonLoader, SkeletonText } from '../components/ui/Skeleton';
+import LiveMachineCard from '../components/LiveMachineCard';
 
 const STATUS_COLORS: Record<MachineStatus, string> = {
   running: '#22c55e',
@@ -96,12 +97,13 @@ export default function Dashboard() {
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ['dashboard', refreshTrigger],
     queryFn: () => aiApi.getDashboard().then(r => r.data),
-    refetchInterval: 30000, // Poll every 30 seconds for live data
+    refetchInterval: 30000,
     refetchIntervalInBackground: true,
   });
 
-  // Manual refresh handler
   const handleRefresh = () => setRefreshTrigger(Date.now());
+
+  // Build machine list from WebSocket or REST data
 
   if (isLoading && !stats) {
     return (
@@ -115,7 +117,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1,2,3,4].map((i) => (
+          {[1, 2, 3, 4].map((i) => (
             <Card key={i} className="animate-pulse">
               <SkeletonLoader width="60%" height="20px" />
               <SkeletonLoader width="100%" height="28px" className="mt-2" radius="full" />
@@ -134,8 +136,6 @@ export default function Dashboard() {
     { name: 'Idle', value: Math.max(0, (stats?.machines_total || 0) - (stats?.machines_running || 0) - (stats?.machines_maintenance || 0) - (stats?.machines_fault || 0)), color: STATUS_COLORS.idle },
   ].filter(d => d.value > 0);
 
-  // Build OEE history from machine data if available
-  // In production this comes from a time-series DB; here we derive from current snapshot
   const now = new Date();
   const OEE_TREND = [
     { time: '00:00', oee: Math.round((stats?.oee_average || 85) * 0.92) },
@@ -166,7 +166,14 @@ export default function Dashboard() {
               </span>
             </div>
           )}
-          <ButtonRefresh onClick={handleRefresh} />
+          <button
+            onClick={handleRefresh}
+            className="p-1.5 text-slate-400 hover:text-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded transition-colors"
+            aria-label="Refresh dashboard data"
+          >
+            <span className="sr-only">Refresh</span>
+            <RefreshCw className="w-4 h-4" aria-hidden="true" />
+          </button>
         </div>
       </div>
 
@@ -281,6 +288,13 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Live Machine Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        {['CNC-A01', 'CNC-A02', 'ROBOT-A01', 'INSP-A01', 'DRILL-B01'].map((machineId) => (
+          <LiveMachineCard key={machineId} machineId={machineId} />
+        ))}
+      </div>
+
       {/* Recent Alerts + Active Shift Info */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Recent Alerts */}
@@ -365,18 +379,5 @@ export default function Dashboard() {
         </Card>
       </div>
     </div>
-  );
-}
-
-function ButtonRefresh({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="p-2 text-slate-400 hover:text-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded transition-colors"
-      aria-label="Refresh dashboard data"
-    >
-      <span className="sr-only">Refresh</span>
-      <RefreshCw className="w-4 h-4" aria-hidden="true" />
-    </button>
   );
 }

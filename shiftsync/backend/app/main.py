@@ -15,12 +15,13 @@ import structlog
 import logging
 
 from app.config import settings
-from app.routers import auth, shifts, logs, handover, machines, ai_assistant, seed
+from app.routers import auth, shifts, logs, handover, machines, ai_assistant, seed, websocket
 from app.middleware.production import (
     RateLimitMiddleware,
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
 )
+from app.services.telemetry_simulator import telemetry_simulator
 
 logger = structlog.get_logger()
 
@@ -58,10 +59,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("auto_seed_failed", error=str(e)[:200])
 
+    # Start telemetry simulator for real-time machine data
+    try:
+        await telemetry_simulator.start()
+        logger.info("telemetry_simulator_started")
+    except Exception as e:
+        logger.warning("telemetry_simulator_start_failed", error=str(e)[:200])
+
     yield
 
     # Shutdown
     logger.info("shiftsync_shutdown")
+    try:
+        await telemetry_simulator.stop()
+        logger.info("telemetry_simulator_stopped")
+    except Exception as e:
+        logger.warning("telemetry_simulator_stop_failed", error=str(e)[:200])
 
 
 # ─── FastAPI App ───────────────────────────────────────────────────────────────
@@ -118,6 +131,7 @@ app.include_router(handover.router, prefix="/api/v1")
 app.include_router(machines.router, prefix="/api/v1")
 app.include_router(ai_assistant.router, prefix="/api/v1")
 app.include_router(seed.router, prefix="/api/v1")
+app.include_router(websocket.router)
 
 # ─── Global Exception Handler ─────────────────────────────────────────────────
 
