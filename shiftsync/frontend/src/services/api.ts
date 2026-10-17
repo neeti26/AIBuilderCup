@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { getCsrfToken, sanitizeInput } from '../lib/security';
 
-// Backend on Render
+// Backend API on Render
 const BASE_URL = import.meta.env.VITE_API_URL || 'https://aibuildercup.onrender.com/api/v1';
 
 const api: AxiosInstance = axios.create({
@@ -26,7 +26,7 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 }, (error) => {
   onRequestEnd();
-  return Promise.reject(error);
+  return Promise.reject(new Error('Network error: Unable to connect to server'));
 });
 
 api.interceptors.response.use(
@@ -37,29 +37,48 @@ api.interceptors.response.use(
   (error: AxiosError) => {
     onRequestEnd();
     
-    // Better error handling with proper typing
-    let errorMessage = 'An unexpected error occurred';
-    const responseData = error.response?.data as any;
-    
-    if (error.response?.status === 401) {
+    // Network error (no response from server)
+    if (!error.response) {
+      return Promise.reject(new Error('Network error: Unable to connect to server. Please check your internet connection.'));
+    }
+
+    const status = error.response.status;
+    const responseData = error.response.data as any;
+
+    // Extract error message from various response formats
+    let errorMessage = '';
+    if (typeof responseData === 'string') {
+      errorMessage = responseData;
+    } else if (responseData?.detail) {
+      errorMessage = responseData.detail;
+    } else if (responseData?.message) {
+      errorMessage = responseData.message;
+    } else if (responseData?.error) {
+      errorMessage = responseData.error;
+    } else if (error.message) {
+      errorMessage = error.message;
+    } else {
+      errorMessage = `Request failed with status ${status}`;
+    }
+
+    // Handle specific status codes
+    if (status === 401) {
       localStorage.removeItem('shiftsync_token');
       localStorage.removeItem('shiftsync_user');
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
-      errorMessage = 'Invalid credentials';
-    } else if (error.response?.status === 429) {
-      errorMessage = 'Rate limited. Please slow down.';
-    } else if (error.response?.status && error.response.status >= 500) {
+      errorMessage = 'Invalid credentials. Please check your username and password.';
+    } else if (status === 403) {
+      errorMessage = 'Access denied. You do not have permission to perform this action.';
+    } else if (status === 404) {
+      errorMessage = 'Resource not found. Please try again later.';
+    } else if (status === 429) {
+      errorMessage = 'Too many requests. Please slow down and try again later.';
+    } else if (status >= 500) {
       errorMessage = 'Server error. Please try again later.';
-    } else if (responseData?.detail) {
-      errorMessage = responseData.detail;
-    } else if (responseData?.message) {
-      errorMessage = responseData.message;
-    } else if (error.message) {
-      errorMessage = error.message;
     }
-    
+
     return Promise.reject(new Error(errorMessage));
   }
 );
