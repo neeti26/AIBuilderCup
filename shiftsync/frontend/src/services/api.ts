@@ -1,8 +1,8 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { getCsrfToken, sanitizeInput } from '../lib/security';
 
-// For Firebase Hosting, API is proxied via /api → Cloud Functions
-const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// Backend on Render
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://aibuildercup.onrender.com/api/v1';
 
 const api: AxiosInstance = axios.create({
   baseURL: BASE_URL,
