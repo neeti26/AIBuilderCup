@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { getCsrfToken, sanitizeInput } from '../lib/security';
 
 // For Firebase Hosting, API is proxied via /api → Cloud Functions
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -18,6 +19,9 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // Add CSRF token
+  const csrfToken = getCsrfToken();
+  config.headers['X-CSRF-Token'] = csrfToken;
   config.headers['X-Request-ID'] = `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   onRequestStart();
   return config;
@@ -52,7 +56,7 @@ api.interceptors.response.use(
 
 export const authApi = {
   login: (username: string, password: string) =>
-    api.post('/auth/login', { username, password }),
+    api.post('/auth/login', { username: sanitizeInput(username), password }),
   register: (data: object) => api.post('/auth/register', data),
   me: () => api.get('/auth/me'),
 };
@@ -94,7 +98,7 @@ export const machinesApi = {
 export const aiApi = {
   chat: (message: string, shiftId?: string, history?: object[]) =>
     api.post('/ai/chat', {
-      message,
+      message: sanitizeInput(message),
       shift_id: shiftId,
       conversation_history: history || [],
     }),

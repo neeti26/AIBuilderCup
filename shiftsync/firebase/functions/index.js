@@ -1,23 +1,37 @@
 /**
- * ShiftSync AI — Firebase Cloud Functions
- * Full backend: auth, shifts, logs, handover, machines, AI assistant
- * Deployed on Firebase Spark plan (free, no billing required)
+ * ShiftSync AI — Firebase Cloud Functions Backend
+ * Production-hardened with security middleware, input validation, rate limiting
+ * Deployed on Firebase Spark plan (free tier)
  */
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const express = require("express");
 const cors = require("cors");
 
+// Security middleware
+const {
+  sanitizeInput,
+  validateMachineId,
+  rateLimiter,
+  loginLimiter,
+  recordLoginFailure,
+  recordLoginSuccess,
+  securityHeaders
+} = require("./security");
+
+const { hashPassword, verifyPassword, createToken, authMiddleware } = require("./auth");
+
 // Init Firebase Admin
 admin.initializeApp();
 
 const db = require("./db");
 const gemini = require("./gemini");
-const { hashPassword, verifyPassword, createToken, authMiddleware } = require("./auth");
 
 const app = express();
 app.use(cors({ origin: true }));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "10kb" })); // Limit request body size
+app.use(securityHeaders);
+app.use(rateLimiter);
 
 // Get Gemini API key from environment
 const getGeminiKey = () => process.env.GEMINI_API_KEY || functions.config().shiftsync?.gemini_key || "";
@@ -30,16 +44,29 @@ app.get("/", (req, res) => res.json({
 app.get("/health", (req, res) => res.json({ status: "healthy" }));
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
-app.post("/auth/login", async (req, res) => {
+app.post("/auth/login", loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = await db.getUserByUsername(username);
+
+    // Input validation
+    if (!username || typeof username !== 'string' || username.length < 3 || username.length > 100) {
+      return res.status(400).json({ detail: "Invalid username" });
+    }
+    if (!password || typeof password !== 'string' || password.length < 6 || password.length > 128) {
+      return res.status(400).json({ detail: "Invalid password" });
+    }
+
+    const sanitizedUsername = sanitizeInput(username);
+    const user = await db.getUserByUsername(sanitizedUsername);
     if (!user || !verifyPassword(password, user.hashed_password)) {
+      recordLoginFailure(req.ip || req.connection.remoteAddress || 'unknown');
       return res.status(401).json({ detail: "Incorrect username or password" });
     }
+
+    recordLoginSuccess(req.ip || req.connection.remoteAddress || 'unknown');
     const token = createToken({ sub: user.username, id: user.id, role: user.role });
     res.json({ access_token: token, token_type: "bearer", user: { id: user.id, username: user.username, full_name: user.full_name, role: user.role, department: user.department } });
-  } catch (e) { res.status(500).json({ detail: e.message }); }
+  } catch (e) { res.status(500).json({ detail: "Authentication failed" }); }
 });
 
 app.get("/auth/me", authMiddleware, async (req, res) => {
@@ -47,7 +74,7 @@ app.get("/auth/me", authMiddleware, async (req, res) => {
     const user = await db.getUserByUsername(req.user.sub);
     if (!user) return res.status(404).json({ detail: "User not found" });
     res.json({ id: user.id, username: user.username, full_name: user.full_name, role: user.role, department: user.department });
-  } catch (e) { res.status(500).json({ detail: e.message }); }
+  } catch (e) { res.status(500).json({ detail: "Authentication failed" }); }
 });
 
 // ── Seed (init demo data) ─────────────────────────────────────────────────────
@@ -90,9 +117,11 @@ app.post("/seed/demo-data", authMiddleware, async (req, res) => {
 // ── Shifts ────────────────────────────────────────────────────────────────────
 app.post("/shifts/", authMiddleware, async (req, res) => {
   try {
+    const { shift_type, line, production_target, date } = req.body;
+    if (!shift_type || !line) return res.status(400).json({ detail: "Missing required fields" });
     const shift = await db.createShift({ ...req.body, supervisor_name: req.user.full_name || req.user.sub });
     res.status(201).json(shift);
-  } catch (e) { res.status(500).json({ detail: e.message }); }
+  } catch (e) { res.status(500).json({ detail: "Failed to create shift" }); }
 });
 
 app.get("/shifts/active", authMiddleware, async (req, res) => {
@@ -110,14 +139,23 @@ app.get("/shifts/:id", authMiddleware, async (req, res) => {
 app.post("/logs/", authMiddleware, async (req, res) => {
   try {
     const { shift_id, raw_text, machine_id } = req.body;
+    if (!shift_id || !raw_text) return res.status(400).json({ detail: "Missing required fields" });
+    if (typeof raw_text !== 'string' || raw_text.length < 5 || raw_text.length > 5000) {
+      return res.status(400).json({ detail: "Invalid log entry" });
+    }
+
     const shift = await db.getShift(shift_id);
     if (!shift) return res.status(404).json({ detail: "Shift not found" });
 
+    // Sanitize input
+    const sanitizedText = sanitizeInput(raw_text);
+    const safeMachineId = validateMachineId(machine_id);
+
     // AI Analysis
-    const ai = await gemini.analyzeLogEntry(raw_text, machine_id, getGeminiKey());
+    const ai = await gemini.analyzeLogEntry(sanitizedText, safeMachineId, getGeminiKey());
 
     const logDoc = {
-      shift_id, raw_text, machine_id: machine_id || null,
+      shift_id, raw_text: sanitizedText, machine_id: safeMachineId || null,
       category: ai.category, severity: ai.severity,
       ai_summary: ai.ai_summary, action_items: ai.action_items || [],
       tags: ai.tags || [], requires_immediate_attention: ai.requires_immediate_attention || false,
@@ -130,11 +168,11 @@ app.post("/logs/", authMiddleware, async (req, res) => {
     let alertCreated = false;
     if (["critical", "high"].includes(ai.severity) || ai.requires_immediate_attention) {
       await db.createAlert({
-        machine_id: machine_id || "GENERAL",
-        machine_name: machine_id || "General Operations",
+        machine_id: safeMachineId || "GENERAL",
+        machine_name: safeMachineId || "General Operations",
         alert_type: `${ai.category}_alert`,
         severity: ai.severity,
-        message: ai.ai_summary || raw_text.slice(0, 200),
+        message: ai.ai_summary || sanitizedText.slice(0, 200),
         ai_diagnosis: ai.root_cause_hint || null,
         recommended_action: (ai.action_items || ["Investigate immediately"])[0],
         source_log_id: log.id, shift_id,
@@ -142,7 +180,7 @@ app.post("/logs/", authMiddleware, async (req, res) => {
       alertCreated = true;
     }
     res.status(201).json({ log, ai_analysis: ai, alert_created: alertCreated });
-  } catch (e) { res.status(500).json({ detail: e.message }); }
+  } catch (e) { res.status(500).json({ detail: "Failed to process log entry" }); }
 });
 
 app.get("/logs/shift/:id", authMiddleware, async (req, res) => {
@@ -169,14 +207,29 @@ app.get("/machines/:id", authMiddleware, async (req, res) => {
 
 app.post("/machines/status", authMiddleware, async (req, res) => {
   try {
-    const result = await db.upsertMachine({ ...req.body, updated_by: req.user.sub });
+    const { machine_id, status, oee, temperature, vibration, pressure } = req.body;
+    if (!machine_id) return res.status(400).json({ detail: "Missing machine_id" });
+
+    const safeMachineId = validateMachineId(machine_id);
+    if (!safeMachineId) return res.status(400).json({ detail: "Invalid machine ID" });
+
+    await db.upsertMachine({ ...req.body, machine_id: safeMachineId, updated_by: req.user.sub });
+
     // Anomaly detection
-    const anomalies = await gemini.detectAnomalies([req.body], getGeminiKey());
+    const anomalies = await gemini.detectAnomalies([{ ...req.body, machine_id: safeMachineId }], getGeminiKey());
     for (const a of anomalies.filter(x => (x.confidence || 0) >= 0.7)) {
-      await db.createAlert({ machine_id: req.body.machine_id, machine_name: req.body.machine_id, alert_type: a.alert_type, severity: a.severity, message: a.message, ai_diagnosis: a.ai_diagnosis, recommended_action: a.recommended_action });
+      await db.createAlert({
+        machine_id: safeMachineId,
+        machine_name: safeMachineId,
+        alert_type: a.alert_type,
+        severity: a.severity,
+        message: a.message,
+        ai_diagnosis: a.ai_diagnosis,
+        recommended_action: a.recommended_action,
+      });
     }
-    res.json({ machine: result, anomalies_detected: anomalies.length, anomalies });
-  } catch (e) { res.status(500).json({ detail: e.message }); }
+    res.json({ machine: { ...req.body, machine_id: safeMachineId }, anomalies_detected: anomalies.length, anomalies });
+  } catch (e) { res.status(500).json({ detail: "Failed to update machine status" }); }
 });
 
 app.get("/machines/:id/maintenance-recommendation", authMiddleware, async (req, res) => {
@@ -187,13 +240,15 @@ app.get("/machines/:id/maintenance-recommendation", authMiddleware, async (req, 
     const machineAlerts = alerts.filter(a => a.machine_id === req.params.id);
     const rec = await gemini.getMaintenanceRec(req.params.id, m.name || req.params.id, m, machineAlerts, getGeminiKey());
     res.json({ machine_id: req.params.id, machine_name: m.name, recommendation: rec });
-  } catch (e) { res.status(500).json({ detail: e.message }); }
+  } catch (e) { res.status(500).json({ detail: "Failed to get maintenance recommendation" }); }
 });
 
 // ── Handover ──────────────────────────────────────────────────────────────────
 app.post("/handover/generate", authMiddleware, async (req, res) => {
   try {
     const { shift_id } = req.body;
+    if (!shift_id) return res.status(404).json({ detail: "Shift not found" });
+
     const shift = await db.getShift(shift_id);
     if (!shift) return res.status(404).json({ detail: "Shift not found" });
 
@@ -214,7 +269,7 @@ app.post("/handover/generate", authMiddleware, async (req, res) => {
       high_count: logs.filter(l => l.severity === "high").length,
     });
     res.json({ report: saved, metadata: { logs_analyzed: logs.length, machines_assessed: machines.length } });
-  } catch (e) { res.status(500).json({ detail: e.message }); }
+  } catch (e) { res.status(500).json({ detail: "Failed to generate handover report" }); }
 });
 
 app.get("/handover/shift/:id", authMiddleware, async (req, res) => {
@@ -226,6 +281,10 @@ app.get("/handover/shift/:id", authMiddleware, async (req, res) => {
 app.post("/ai/chat", authMiddleware, async (req, res) => {
   try {
     const { message, shift_id, conversation_history } = req.body;
+    if (!message || typeof message !== 'string' || message.length < 1 || message.length > 2000) {
+      return res.status(400).json({ detail: "Invalid message" });
+    }
+
     let ctx = null;
     if (shift_id) {
       const shift = await db.getShift(shift_id);
@@ -236,7 +295,7 @@ app.post("/ai/chat", authMiddleware, async (req, res) => {
     }
     const result = await gemini.chatWithContext(message, ctx, conversation_history || [], getGeminiKey());
     res.json({ response: result.response || "", sources: result.sources || [], suggested_actions: result.suggested_actions || [] });
-  } catch (e) { res.status(500).json({ detail: e.message }); }
+  } catch (e) { res.status(500).json({ detail: "AI assistant failed" }); }
 });
 
 app.get("/ai/alerts", authMiddleware, async (req, res) => {

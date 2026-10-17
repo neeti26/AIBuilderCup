@@ -1,3 +1,7 @@
+/**
+ * ErrorBoundary - Catches React errors gracefully
+ * Prevents blank white screens and shows recovery options
+ */
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import Button from './Button';
@@ -13,7 +17,7 @@ interface ErrorBoundaryProps {
 }
 
 /**
- * ErrorBoundary — catches React errors in a subtree and shows a
+ * ErrorBoundary - catches React errors in a subtree and shows a
  * production-safe fallback instead of a blank white screen.
  */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -35,6 +39,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   retry = () => {
     this.setState({ hasError: false, errorMessage: '' });
+    window.location.reload();
   };
 
   render() {
@@ -50,7 +55,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             {this.state.errorMessage}
           </p>
           <Button onClick={this.retry} icon={<RefreshCw className="w-4 h-4" aria-hidden="true" />}>
-            Try Again
+            Refresh Page
           </Button>
         </div>
       );
